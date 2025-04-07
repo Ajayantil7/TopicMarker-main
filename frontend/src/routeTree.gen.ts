@@ -11,14 +11,21 @@
 // Import Routes
 
 import { Route as rootRoute } from './routes/__root'
+import { Route as MdxPublicImport } from './routes/mdxPublic'
 import { Route as AboutImport } from './routes/about'
 import { Route as AuthenticatedImport } from './routes/_authenticated'
 import { Route as AuthenticatedIndexImport } from './routes/_authenticated/index'
 import { Route as AuthenticatedProfileImport } from './routes/_authenticated/profile'
+import { Route as AuthenticatedMdxImport } from './routes/_authenticated/mdx'
 import { Route as AuthenticatedExpensesImport } from './routes/_authenticated/expenses'
 import { Route as AuthenticatedCreateExpenseImport } from './routes/_authenticated/create-expense'
 
 // Create/Update Routes
+
+const MdxPublicRoute = MdxPublicImport.update({
+  path: '/mdxPublic',
+  getParentRoute: () => rootRoute,
+} as any)
 
 const AboutRoute = AboutImport.update({
   path: '/about',
@@ -37,6 +44,11 @@ const AuthenticatedIndexRoute = AuthenticatedIndexImport.update({
 
 const AuthenticatedProfileRoute = AuthenticatedProfileImport.update({
   path: '/profile',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+
+const AuthenticatedMdxRoute = AuthenticatedMdxImport.update({
+  path: '/mdx',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
 
@@ -64,12 +76,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AboutImport
       parentRoute: typeof rootRoute
     }
+    '/mdxPublic': {
+      preLoaderRoute: typeof MdxPublicImport
+      parentRoute: typeof rootRoute
+    }
     '/_authenticated/create-expense': {
       preLoaderRoute: typeof AuthenticatedCreateExpenseImport
       parentRoute: typeof AuthenticatedImport
     }
     '/_authenticated/expenses': {
       preLoaderRoute: typeof AuthenticatedExpensesImport
+      parentRoute: typeof AuthenticatedImport
+    }
+    '/_authenticated/mdx': {
+      preLoaderRoute: typeof AuthenticatedMdxImport
       parentRoute: typeof AuthenticatedImport
     }
     '/_authenticated/profile': {
@@ -89,10 +109,12 @@ export const routeTree = rootRoute.addChildren([
   AuthenticatedRoute.addChildren([
     AuthenticatedCreateExpenseRoute,
     AuthenticatedExpensesRoute,
+    AuthenticatedMdxRoute,
     AuthenticatedProfileRoute,
     AuthenticatedIndexRoute,
   ]),
   AboutRoute,
+  MdxPublicRoute,
 ])
 
 /* prettier-ignore-end */
