@@ -198,9 +198,19 @@ function LessonPlan() {
 
   // Toggle fullscreen for preview
   const togglePreviewFullscreen = () => {
-    setIsPreviewFullscreen(!isPreviewFullscreen);
-    if (!isPreviewFullscreen) {
+    const newState = !isPreviewFullscreen;
+    setIsPreviewFullscreen(newState);
+    if (newState) {
+      // When entering fullscreen, ensure editor is hidden
       setIsEditorFullscreen(false);
+      // Force a reflow to ensure the layout updates correctly
+      setTimeout(() => {
+        window.dispatchEvent(new Event('resize'));
+        // Force another reflow after a bit more time to ensure content is centered
+        setTimeout(() => {
+          window.dispatchEvent(new Event('resize'));
+        }, 100);
+      }, 50);
     }
     // Keep the right sidebar visible even in fullscreen mode
     setShowRightSidebar(true);
@@ -210,21 +220,21 @@ function LessonPlan() {
   const getEditorWidth = () => {
     if (isMobileView) return 'w-full';
     if (isEditorFullscreen) return 'w-full';
-    if (isPreviewFullscreen) return 'w-0';
-    return 'w-3/5'; // Increased editor width (60%)
+    if (isPreviewFullscreen) return 'w-0 hidden';
+    return 'w-2/3'; // Increased editor width (67%)
   };
 
   const getPreviewWidth = () => {
     if (isMobileView) return 'w-full';
     if (isPreviewFullscreen) return 'w-full';
-    if (isEditorFullscreen) return 'w-0';
-    return 'w-2/5'; // Decreased preview width (40%)
+    if (isEditorFullscreen) return 'w-0 hidden';
+    return 'w-1/3'; // Decreased preview width (33%)
   };
 
   return (
     <div className={`flex flex-col md:flex-row gap-4 w-full ${isEditorFullscreen || isPreviewFullscreen ? 'h-screen overflow-hidden' : ''}`}>
       {/* Left sidebar for topic hierarchy */}
-      <div className={`w-full md:w-1/4 lg:w-1/5 ${isEditorFullscreen || isPreviewFullscreen ? 'hidden md:hidden' : ''}`}>
+      <div className={`w-full md:w-1/5 lg:w-1/6 ${isEditorFullscreen || isPreviewFullscreen ? 'hidden md:hidden' : ''}`}>
         <Card>
           <CardHeader>
             <CardTitle>Lesson Plan Topics</CardTitle>
@@ -303,7 +313,7 @@ function LessonPlan() {
 
       {/* Right sidebar for MDX generation options */}
       {showRightSidebar && (
-        <div className={`w-full md:w-1/4 lg:w-1/5 ${isEditorFullscreen || isPreviewFullscreen ? 'md:w-1/5 lg:w-1/6' : ''}`}>
+        <div className={`w-full md:w-1/5 lg:w-1/6 ${isEditorFullscreen || isPreviewFullscreen ? 'md:w-1/6 lg:w-1/7' : ''}`}>
           <Card>
             <CardHeader>
               <CardTitle>MDX Generation</CardTitle>
@@ -421,7 +431,7 @@ function LessonPlan() {
 
       {/* Main content area for MDX */}
       {!showEditor && !isEditorFullscreen && !isPreviewFullscreen && (
-        <div className={`flex-1 ${showRightSidebar ? 'md:w-1/3' : ''}`}>
+        <div className="flex-1">
           <Card className="h-full">
             <CardHeader>
               <CardTitle>
@@ -498,7 +508,7 @@ function LessonPlan() {
             {/* Editor Panel */}
             <div
               className={`${getEditorWidth()} h-full border-r border-slate-200 dark:border-slate-700 transition-all duration-300 ${
-                isMobileView && activeTab !== 'editor' ? 'hidden' : ''
+                (isMobileView && activeTab !== 'editor') || isPreviewFullscreen ? 'hidden' : ''
               }`}
             >
               <div className="p-3 h-14 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
@@ -533,7 +543,7 @@ function LessonPlan() {
             <div
               className={`${getPreviewWidth()} h-full overflow-auto transition-all duration-300 ${
                 isMobileView && activeTab !== 'preview' ? 'hidden' : ''
-              }`}
+              } ${isPreviewFullscreen ? 'w-full' : ''}`}
             >
               <div className="p-3 h-14 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
                 <h2 className="text-lg font-semibold">Preview</h2>
@@ -550,12 +560,14 @@ function LessonPlan() {
                 </div>
               </div>
               <div
-                className="prose prose-sm sm:prose max-w-none dark:prose-invert p-4 overflow-auto h-[calc(100%-3.5rem)]"
+                className={`overflow-auto h-[calc(100%-3.5rem)] ${isPreviewFullscreen ? 'w-full flex justify-center items-start p-8' : 'prose prose-sm sm:prose dark:prose-invert p-4 max-w-none'}`}
                 style={{
                   minHeight: isPreviewFullscreen ? 'calc(100vh - 120px)' : '500px'
                 }}
               >
-                <MDXRenderer content={mdxContent} />
+                <div className={isPreviewFullscreen ? 'prose prose-lg dark:prose-invert max-w-3xl w-full' : 'w-full'}>
+                  <MDXRenderer content={mdxContent} />
+                </div>
               </div>
             </div>
           </div>

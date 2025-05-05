@@ -16,7 +16,7 @@ function Profile() {
   if (error) return "not logged in";
 
   return (
-    <div className="p-2">
+    <div className="w-full mx-auto p-4">
       <div className="flex items-center gap-2">
         <Avatar>
           {data.user.picture && (

@@ -34,12 +34,14 @@ function MDXPublic() {
 
   return (
     <div className="min-h-screen bg-white dark:bg-slate-900">
-      <div className="w-full max-w-5xl mx-auto px-4 sm:px-6 py-8">
+      <div className="w-full mx-auto px-4 sm:px-6 py-8">
         <h1 className="text-2xl md:text-3xl font-bold mb-6 text-center">MDX Public View</h1>
 
         {mdxContent ? (
-          <div className="prose prose-sm sm:prose md:prose-lg lg:prose-xl max-w-none dark:prose-invert mx-auto">
-            <MDXRenderer content={mdxContent} />
+          <div className="flex justify-center w-full p-8">
+            <div className="prose prose-lg max-w-3xl w-full dark:prose-invert">
+              <MDXRenderer content={mdxContent} />
+            </div>
           </div>
         ) : (
           <div className="text-center py-10 bg-gray-50 dark:bg-gray-800 rounded-lg shadow-sm">

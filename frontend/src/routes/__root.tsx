@@ -94,7 +94,7 @@ function NavBar() {
 
   return (
     <nav className="relative px-4 py-3 w-full">
-      <div className="flex justify-between items-center max-w-6xl mx-auto">
+      <div className="flex justify-between items-center w-full mx-auto">
         {/* Logo - always visible */}
         <Link to="/" className="text-xl md:text-2xl font-bold z-10 flex-shrink-0">
           Topic Marker
@@ -155,7 +155,7 @@ function Root() {
     <div className="min-h-screen flex flex-col">
       <NavBar />
       <hr className="w-full" />
-      <main className="flex-1 px-4 py-6 w-full max-w-6xl mx-auto">
+      <main className="flex-1 px-4 py-6 w-full mx-auto">
         <Outlet />
       </main>
       <Toaster />

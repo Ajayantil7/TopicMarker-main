@@ -16,7 +16,7 @@ export const Route = createFileRoute('/_authenticated/')({
 
 function Index() {
   return (
-    <div className="w-full max-w-4xl mx-auto px-4 py-8">
+    <div className="w-full mx-auto px-4 py-8">
       <h1 className="text-2xl md:text-3xl lg:text-4xl font-bold text-center mb-8">
         Welcome to Topic Marker
       </h1>
