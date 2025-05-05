@@ -65,3 +65,19 @@ export async function deleteExpense({ id }: { id: number }) {
     throw new Error("server error");
   }
 }
+
+export async function queryRag(query: string) {
+  const res = await api.rag.$get({ query: { query } });
+  if (!res.ok) {
+    throw new Error("server error");
+  }
+  const data = await res.json();
+  return data;
+}
+
+export const ragQueryOptions = queryOptions({
+  queryKey: ["rag-query"],
+  queryFn: ({ queryKey }) => queryRag(queryKey[1] as string),
+  enabled: false, // Only run when explicitly called
+});
+
