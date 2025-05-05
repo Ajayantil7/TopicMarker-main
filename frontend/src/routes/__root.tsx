@@ -56,14 +56,8 @@ function NavBar() {
       {/* Protected routes only shown when authenticated */}
       {isAuthenticated && (
         <>
-          <Link to="/expenses" className="[&.active]:font-bold text-base hover:text-primary transition-colors">
-            Expenses
-          </Link>
-          <Link to="/create-expense" className="[&.active]:font-bold text-base hover:text-primary transition-colors">
-            Create
-          </Link>
           <Link to="/mdx" className="[&.active]:font-bold text-base hover:text-primary transition-colors">
-            MDX
+            MDX Editor
           </Link>
           <Link to="/profile" className="[&.active]:font-bold text-base hover:text-primary transition-colors">
             Profile
@@ -98,7 +92,7 @@ function NavBar() {
       <div className="flex justify-between items-center max-w-6xl mx-auto">
         {/* Logo - always visible */}
         <Link to="/" className="text-xl md:text-2xl font-bold z-10 flex-shrink-0">
-          Expense Tracker
+          Topic Marker
         </Link>
 
         {/* Desktop Navigation */}
@@ -128,7 +122,7 @@ function NavBar() {
                   className="text-2xl font-bold"
                   onClick={() => setIsMobileMenuOpen(false)}
                 >
-                  Expense Tracker
+                  Topic Marker
                 </Link>
                 <button
                   onClick={() => setIsMobileMenuOpen(false)}

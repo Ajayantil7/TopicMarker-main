@@ -1,15 +1,30 @@
-# app
+# Topic Marker
+
+A web application for creating and managing topic content with MDX.
+
+## Getting Started
 
 To install dependencies:
 
 ```bash
 bun install
+cd frontend && bun install
 ```
 
-To run:
+To run the development server:
 
 ```bash
-bun run index.ts
+bun dev
 ```
 
-This project was created using `bun init` in bun v1.0.25. [Bun](https://bun.sh) is a fast all-in-one JavaScript runtime.
+This will start the backend server. To run the frontend development server:
+
+```bash
+cd frontend && bun dev
+```
+
+## Technologies
+
+- Backend: Bun, Hono, Drizzle ORM
+- Frontend: React, TanStack Router, TanStack Query, Tailwind CSS
+- Authentication: Kinde

@@ -17,8 +17,6 @@ import { Route as AuthenticatedImport } from './routes/_authenticated'
 import { Route as AuthenticatedIndexImport } from './routes/_authenticated/index'
 import { Route as AuthenticatedProfileImport } from './routes/_authenticated/profile'
 import { Route as AuthenticatedMdxImport } from './routes/_authenticated/mdx'
-import { Route as AuthenticatedExpensesImport } from './routes/_authenticated/expenses'
-import { Route as AuthenticatedCreateExpenseImport } from './routes/_authenticated/create-expense'
 
 // Create/Update Routes
 
@@ -52,18 +50,6 @@ const AuthenticatedMdxRoute = AuthenticatedMdxImport.update({
   getParentRoute: () => AuthenticatedRoute,
 } as any)
 
-const AuthenticatedExpensesRoute = AuthenticatedExpensesImport.update({
-  path: '/expenses',
-  getParentRoute: () => AuthenticatedRoute,
-} as any)
-
-const AuthenticatedCreateExpenseRoute = AuthenticatedCreateExpenseImport.update(
-  {
-    path: '/create-expense',
-    getParentRoute: () => AuthenticatedRoute,
-  } as any,
-)
-
 // Populate the FileRoutesByPath interface
 
 declare module '@tanstack/react-router' {
@@ -79,14 +65,6 @@ declare module '@tanstack/react-router' {
     '/mdxPublic': {
       preLoaderRoute: typeof MdxPublicImport
       parentRoute: typeof rootRoute
-    }
-    '/_authenticated/create-expense': {
-      preLoaderRoute: typeof AuthenticatedCreateExpenseImport
-      parentRoute: typeof AuthenticatedImport
-    }
-    '/_authenticated/expenses': {
-      preLoaderRoute: typeof AuthenticatedExpensesImport
-      parentRoute: typeof AuthenticatedImport
     }
     '/_authenticated/mdx': {
       preLoaderRoute: typeof AuthenticatedMdxImport
@@ -107,8 +85,6 @@ declare module '@tanstack/react-router' {
 
 export const routeTree = rootRoute.addChildren([
   AuthenticatedRoute.addChildren([
-    AuthenticatedCreateExpenseRoute,
-    AuthenticatedExpensesRoute,
     AuthenticatedMdxRoute,
     AuthenticatedProfileRoute,
     AuthenticatedIndexRoute,

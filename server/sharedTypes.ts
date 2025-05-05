@@ -1,14 +1,4 @@
-import { insertExpensesSchema } from "./db/schema/expenses";
 import { z } from "zod";
-
-// Expense types
-export const createExpenseSchema = insertExpensesSchema.omit({
-  userId: true,
-  createdAt: true,
-  id: true,
-});
-
-export type CreateExpense = z.infer<typeof createExpenseSchema>;
 
 // Topic types
 export const createTopicSchema = z.object({

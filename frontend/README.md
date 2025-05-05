@@ -1,6 +1,6 @@
-# React + TypeScript + Vite
+# Topic Marker Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+The frontend for the Topic Marker application, built with React, TypeScript, and Vite.
 
 Currently, two official plugins are available:
 
