@@ -38,8 +38,8 @@ function MDXPublic() {
         <h1 className="text-2xl md:text-3xl font-bold mb-6 text-center">MDX Public View</h1>
 
         {mdxContent ? (
-          <div className="flex justify-center w-full p-8">
-            <div className="prose prose-lg max-w-3xl w-full dark:prose-invert">
+          <div className="w-full p-6">
+            <div className="prose prose-sm sm:prose dark:prose-invert w-full max-w-none prose-headings:text-inherit prose-p:text-inherit prose-a:text-blue-600 prose-strong:font-bold prose-em:italic prose-ul:list-disc prose-ol:list-decimal prose-li:ml-4 prose-pre:bg-gray-100 dark:prose-pre:bg-gray-800 prose-pre:p-4 prose-pre:rounded prose-pre:overflow-auto prose-code:text-red-500 prose-blockquote:border-l-4 prose-blockquote:pl-4 prose-blockquote:italic prose-blockquote:text-gray-700 dark:prose-blockquote:text-gray-300 prose-img:max-w-full">
               <MDXRenderer content={mdxContent} />
             </div>
           </div>
