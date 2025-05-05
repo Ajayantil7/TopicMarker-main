@@ -1,18 +1,17 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { useState, useRef, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   searchTopics,
   generateSingleTopic,
   generateSingleTopicRaw,
-  generateMdxFromUrls,
   generateMdxFromUrlsRaw
 } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { MDXRenderer } from '@/components/mdxRenderer';
-import { Loader2, Search, X, ExternalLink, Maximize2, Minimize2 } from 'lucide-react';
+import { Loader2, Search, X, Maximize2, Minimize2, ChevronLeft, ChevronRight, Link } from 'lucide-react';
 import { Textarea } from '@/components/ui/textarea';
 
 export const Route = createFileRoute('/_authenticated/lesson-plan')({
@@ -22,10 +21,6 @@ export const Route = createFileRoute('/_authenticated/lesson-plan')({
 interface Topic {
   topic: string;
   subtopics: string[];
-}
-
-interface TopicHierarchy {
-  topics: Topic[];
 }
 
 interface UrlInput {
@@ -48,6 +43,8 @@ function LessonPlan() {
   const [generationError, setGenerationError] = useState<string | null>(null);
   const [isMobileView, setIsMobileView] = useState(false);
   const [activeTab, setActiveTab] = useState<'editor' | 'preview'>('editor');
+  const [isLeftSidebarCollapsed, setIsLeftSidebarCollapsed] = useState(false);
+  const [isRightSidebarCollapsed, setIsRightSidebarCollapsed] = useState(false);
 
   // Query for searching topics
   const {
@@ -131,7 +128,8 @@ function LessonPlan() {
       const rawMdx = await generateSingleTopicRaw(currentTopic, 3);
       setMdxContent(rawMdx);
       setShowEditor(true);
-      setShowRightSidebar(false);
+      // Keep the right sidebar visible
+      setShowRightSidebar(true);
     } catch (error) {
       console.error('Error generating MDX from crawling:', error);
       setGenerationError('Failed to generate MDX content from crawling. Please try again.');
@@ -155,7 +153,8 @@ function LessonPlan() {
       const rawMdx = await generateMdxFromUrlsRaw(validUrls, currentTopic, true);
       setMdxContent(rawMdx);
       setShowEditor(true);
-      setShowRightSidebar(false);
+      // Keep the right sidebar visible
+      setShowRightSidebar(true);
     } catch (error) {
       console.error('Error generating MDX from URLs:', error);
       setGenerationError('Failed to generate MDX content from URLs. Please try again.');
@@ -216,6 +215,16 @@ function LessonPlan() {
     setShowRightSidebar(true);
   };
 
+  // Toggle left sidebar collapse
+  const toggleLeftSidebar = () => {
+    setIsLeftSidebarCollapsed(!isLeftSidebarCollapsed);
+  };
+
+  // Toggle right sidebar collapse
+  const toggleRightSidebar = () => {
+    setIsRightSidebarCollapsed(!isRightSidebarCollapsed);
+  };
+
   // Determine panel widths based on fullscreen states
   const getEditorWidth = () => {
     if (isMobileView) return 'w-full';
@@ -234,197 +243,306 @@ function LessonPlan() {
   return (
     <div className={`flex flex-col md:flex-row gap-4 w-full ${isEditorFullscreen || isPreviewFullscreen ? 'h-screen overflow-hidden' : ''}`}>
       {/* Left sidebar for topic hierarchy */}
-      <div className={`w-full md:w-1/5 lg:w-1/6 ${isEditorFullscreen || isPreviewFullscreen ? 'hidden md:hidden' : ''}`}>
-        <Card>
-          <CardHeader>
-            <CardTitle>Lesson Plan Topics</CardTitle>
-            <CardDescription>Search for a topic to generate a lesson plan</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSearch} className="flex items-center space-x-2 mb-4">
-              <Input
-                type="text"
-                placeholder="Enter a topic..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="flex-1"
-              />
-              <Button type="submit" disabled={isLoadingTopics}>
-                {isLoadingTopics ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-              </Button>
-            </form>
-
-            {isTopicsError && (
-              <div className="text-red-500 text-sm mb-4">Error loading topics. Please try again.</div>
-            )}
-
-            {topicsData?.status === 'success' && topicsData.data?.topics && (
-              <div className="space-y-4">
-                {(() => {
-                  try {
-                    // Extract the JSON string from the code block
-                    const topicsString = topicsData.data.topics;
-                    const jsonMatch = topicsString.match(/```json\n([\s\S]*?)\n```/);
-
-                    if (!jsonMatch || !jsonMatch[1]) {
-                      return <div className="text-red-500">Error parsing topics data</div>;
-                    }
-
-                    // Parse the JSON string
-                    const parsedTopics: Topic[] = JSON.parse(jsonMatch[1]);
-
-                    return parsedTopics.map((topic: Topic, index: number) => (
-                      <div key={index} className="space-y-2">
-                        <div
-                          className={`font-medium cursor-pointer p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-800 ${
-                            selectedTopic === topic.topic ? 'bg-gray-100 dark:bg-gray-800' : ''
-                          }`}
-                          onClick={() => handleTopicSelect(topic.topic)}
-                        >
-                          {topic.topic}
-                        </div>
-                        {topic.subtopics && topic.subtopics.length > 0 && (
-                          <div className="pl-4 space-y-1">
-                            {topic.subtopics.map((subtopic, subIndex) => (
-                              <div
-                                key={subIndex}
-                                className={`text-sm cursor-pointer p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 ${
-                                  selectedSubtopic === subtopic ? 'bg-gray-100 dark:bg-gray-800' : ''
-                                }`}
-                                onClick={() => handleSubtopicSelect(subtopic)}
-                              >
-                                {subtopic}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    ));
-                  } catch (error) {
-                    console.error("Error parsing topics:", error);
-                    return <div className="text-red-500">Error parsing topics data</div>;
-                  }
-                })()}
+      <div className={`${isLeftSidebarCollapsed ? 'w-14' : 'w-full md:w-1/5 lg:w-1/6'} ${isEditorFullscreen || isPreviewFullscreen ? 'hidden md:hidden' : ''} transition-all duration-300`}>
+        <Card className="h-full overflow-hidden border-border">
+          <div className="border-b border-border flex items-center justify-between p-2 bg-muted/30">
+            {!isLeftSidebarCollapsed && (
+              <div className="font-medium text-sm flex items-center">
+                <span className="bg-primary/10 text-primary rounded-md px-2 py-0.5">Hierarchy</span>
               </div>
             )}
-          </CardContent>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={toggleLeftSidebar}
+              className={`h-8 w-8 p-0 hover:bg-muted ${isLeftSidebarCollapsed ? 'mx-auto' : 'mr-0 ml-auto'}`}
+              title={isLeftSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            >
+              {isLeftSidebarCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+            </Button>
+          </div>
+
+          {!isLeftSidebarCollapsed ? (
+            <div className="flex flex-col h-[calc(100%-40px)]">
+              <CardHeader className="py-3 pb-1">
+                <CardTitle className="text-lg font-semibold">Lesson Plan Hierarchy</CardTitle>
+                <CardDescription className="text-muted-foreground">
+                  Search for a topic to generate a lesson plan
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="overflow-auto flex-1 pt-2">
+                <form onSubmit={handleSearch} className="flex items-center space-x-2 mb-4">
+                  <Input
+                    type="text"
+                    placeholder="Enter a topic..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="flex-1"
+                  />
+                  <Button type="submit" disabled={isLoadingTopics} size="icon" className="h-9 w-9">
+                    {isLoadingTopics ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                  </Button>
+                </form>
+
+                {isTopicsError && (
+                  <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-lg mb-4">
+                    Error loading topics. Please try again.
+                  </div>
+                )}
+
+                {topicsData?.status === 'success' && topicsData.data?.topics && (
+                  <div className="space-y-2">
+                    {(() => {
+                      try {
+                        // Extract the JSON string from the code block
+                        const topicsString = topicsData.data.topics;
+                        const jsonMatch = topicsString.match(/```json\n([\s\S]*?)\n```/);
+
+                        if (!jsonMatch || !jsonMatch[1]) {
+                          return <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-lg">Error parsing topics data</div>;
+                        }
+
+                        // Parse the JSON string
+                        const parsedTopics: Topic[] = JSON.parse(jsonMatch[1]);
+
+                        return parsedTopics.map((topic: Topic, index: number) => (
+                          <div key={index} className="space-y-1 mb-3">
+                            <div
+                              className={`font-medium cursor-pointer p-2 rounded-md transition-colors ${
+                                selectedTopic === topic.topic
+                                  ? 'bg-primary/10 text-primary'
+                                  : 'hover:bg-muted'
+                              }`}
+                              onClick={() => handleTopicSelect(topic.topic)}
+                            >
+                              {topic.topic}
+                            </div>
+                            {topic.subtopics && topic.subtopics.length > 0 && (
+                              <div className="pl-4 space-y-1 mt-1">
+                                {topic.subtopics.map((subtopic, subIndex) => (
+                                  <div
+                                    key={subIndex}
+                                    className={`text-sm cursor-pointer p-1.5 rounded-md transition-colors ${
+                                      selectedSubtopic === subtopic
+                                        ? 'bg-secondary/50 text-secondary-foreground'
+                                        : 'hover:bg-muted'
+                                    }`}
+                                    onClick={() => handleSubtopicSelect(subtopic)}
+                                  >
+                                    {subtopic}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ));
+                      } catch (error) {
+                        console.error("Error parsing topics:", error);
+                        return <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-lg">Error parsing topics data</div>;
+                      }
+                    })()}
+                  </div>
+                )}
+
+                {!topicsData && (
+                  <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
+                    <Search className="h-10 w-10 mb-4 opacity-20" />
+                    <p className="text-center text-sm">Search for a topic to begin</p>
+                  </div>
+                )}
+              </CardContent>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-start h-[calc(100%-40px)] pt-4">
+              <div className="bg-primary/10 text-primary rounded-full p-1.5 mb-4">
+                <Search className="h-4 w-4" />
+              </div>
+              <div className="text-xs text-center px-1 font-medium rotate-90 whitespace-nowrap mt-4">
+                Hierarchy
+              </div>
+              {selectedTopic && (
+                <div className="text-xs text-center px-1 font-medium rotate-90 whitespace-nowrap mt-4">
+                  {selectedTopic.length > 15 ? `${selectedTopic.substring(0, 15)}...` : selectedTopic}
+                </div>
+              )}
+            </div>
+          )}
         </Card>
       </div>
 
       {/* Right sidebar for MDX generation options */}
       {showRightSidebar && (
-        <div className={`w-full md:w-1/5 lg:w-1/6 ${isEditorFullscreen || isPreviewFullscreen ? 'md:w-1/6 lg:w-1/7' : ''}`}>
-          <Card>
-            <CardHeader>
-              <CardTitle>MDX Generation</CardTitle>
-              <CardDescription>
-                Generate MDX content for {selectedTopic || selectedSubtopic}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div className="flex flex-col gap-2">
-                  <Button
-                    onClick={() => setGenerationMethod('crawl')}
-                    variant={generationMethod === 'crawl' ? 'default' : 'outline'}
-                    className="w-full justify-start"
-                  >
-                    Generate by Crawling
-                  </Button>
-                  <Button
-                    onClick={() => setGenerationMethod('urls')}
-                    variant={generationMethod === 'urls' ? 'default' : 'outline'}
-                    className="w-full justify-start"
-                  >
-                    Generate from URLs
-                  </Button>
+        <div className={`${isRightSidebarCollapsed ? 'w-14' : 'w-full md:w-1/5 lg:w-1/6'} ${isEditorFullscreen || isPreviewFullscreen ? 'md:w-1/6 lg:w-1/7' : ''} transition-all duration-300`}>
+          <Card className="h-full overflow-hidden border-border">
+            <div className="border-b border-border flex items-center justify-between p-2 bg-muted/30">
+              {!isRightSidebarCollapsed && (
+                <div className="font-medium text-sm flex items-center">
+                  <span className="bg-primary/10 text-primary rounded-md px-2 py-0.5">Mode</span>
+                </div>
+              )}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={toggleRightSidebar}
+                className={`h-8 w-8 p-0 hover:bg-muted ${isRightSidebarCollapsed ? 'mx-auto' : 'mr-0 ml-auto'}`}
+                title={isRightSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              >
+                {isRightSidebarCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+              </Button>
+            </div>
+
+            {!isRightSidebarCollapsed ? (
+              <div className="flex flex-col h-[calc(100%-40px)]">
+                <CardHeader className="py-3 pb-1">
+                  <CardTitle className="text-lg font-semibold flex items-center">
+                    <span className="mr-2">Generation Mode</span>
+                    {selectedTopic || selectedSubtopic ? (
+                      <span className="text-xs bg-secondary/50 text-secondary-foreground px-2 py-0.5 rounded-full">
+                        {(selectedTopic || selectedSubtopic || '').length > 15
+                          ? `${(selectedTopic || selectedSubtopic || '').substring(0, 15)}...`
+                          : (selectedTopic || selectedSubtopic)}
+                      </span>
+                    ) : null}
+                  </CardTitle>
+                  <CardDescription className="text-muted-foreground">
+                    Choose a mdx generation method below
+                  </CardDescription>
+                </CardHeader>
+
+                <div className="px-4 py-2">
+                  <div className="flex gap-1 bg-muted/50 p-1 rounded-lg">
+                    <Button
+                      onClick={() => setGenerationMethod('crawl')}
+                      variant="ghost"
+                      size="sm"
+                      className={`flex-1 ${generationMethod === 'crawl'
+                        ? 'bg-background shadow-sm'
+                        : 'hover:bg-background/80'}`}
+                    >
+                      Crawl
+                    </Button>
+                    <Button
+                      onClick={() => setGenerationMethod('urls')}
+                      variant="ghost"
+                      size="sm"
+                      className={`flex-1 ${generationMethod === 'urls'
+                        ? 'bg-background shadow-sm'
+                        : 'hover:bg-background/80'}`}
+                    >
+                      URLs
+                    </Button>
+                  </div>
                 </div>
 
-                {generationMethod === 'crawl' && (
-                  <div className="pt-4">
-                    <p className="text-sm text-muted-foreground mb-4">
-                      This will generate MDX content by crawling the web for information about the selected topic.
-                    </p>
-                    <Button
-                      onClick={generateMdxFromCrawling}
-                      disabled={isGeneratingMdx}
-                      className="w-full"
-                    >
-                      {isGeneratingMdx ? (
-                        <>
-                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                          Generating...
-                        </>
-                      ) : (
-                        'Generate MDX'
-                      )}
-                    </Button>
-                  </div>
-                )}
-
-                {generationMethod === 'urls' && (
-                  <div className="pt-4 space-y-4">
-                    <p className="text-sm text-muted-foreground">
-                      Enter 1-4 URLs to generate MDX content from. Each URL should be a valid web address.
-                    </p>
-
-                    {urlInputs.map((url, index) => (
-                      <div key={index} className="flex items-center gap-2">
-                        <Input
-                          type="url"
-                          placeholder="https://example.com"
-                          value={url.value}
-                          onChange={(e) => handleUrlChange(index, e.target.value)}
-                          className={`flex-1 ${!url.value || url.isValid ? '' : 'border-red-500'}`}
-                        />
-                        {urlInputs.length > 1 && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => removeUrlInput(index)}
-                            className="h-8 w-8"
-                          >
-                            <X className="h-4 w-4" />
-                          </Button>
-                        )}
+                <CardContent className="overflow-auto flex-1 pt-2">
+                  <div className="space-y-4">
+                    {generationMethod === 'crawl' && (
+                      <div className="space-y-4">
+                        <div className="bg-muted/30 rounded-lg p-3 text-sm text-muted-foreground">
+                          <p>
+                            This will generate MDX content by crawling the web for information about the selected topic.
+                          </p>
+                        </div>
+                        <Button
+                          onClick={generateMdxFromCrawling}
+                          disabled={isGeneratingMdx}
+                          className="w-full"
+                        >
+                          {isGeneratingMdx ? (
+                            <>
+                              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                              Generating...
+                            </>
+                          ) : (
+                            'Generate MDX'
+                          )}
+                        </Button>
                       </div>
-                    ))}
-
-                    {urlInputs.length < 4 && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={addUrlInput}
-                        className="w-full"
-                      >
-                        Add URL
-                      </Button>
                     )}
 
-                    <Button
-                      onClick={generateMdxFromUrlsList}
-                      disabled={isGeneratingMdx || !validateUrls()}
-                      className="w-full mt-4"
-                    >
-                      {isGeneratingMdx ? (
-                        <>
-                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                          Generating...
-                        </>
-                      ) : (
-                        'Generate MDX from URLs'
-                      )}
-                    </Button>
-                  </div>
-                )}
+                    {generationMethod === 'urls' && (
+                      <div className="space-y-4">
+                        <div className="bg-muted/30 rounded-lg p-3 text-sm text-muted-foreground">
+                          <p>
+                            Enter 1-4 URLs to generate MDX content from. Each URL should be a valid web address.
+                          </p>
+                        </div>
 
-                {generationError && (
-                  <div className="text-red-500 text-sm mt-2">
-                    {generationError}
+                        <div className="space-y-2">
+                          {urlInputs.map((url, index) => (
+                            <div key={index} className="flex items-center gap-2">
+                              <Input
+                                type="url"
+                                placeholder="https://example.com"
+                                value={url.value}
+                                onChange={(e) => handleUrlChange(index, e.target.value)}
+                                className={`flex-1 text-xs ${!url.value || url.isValid ? '' : 'border-red-500'}`}
+                              />
+                              {urlInputs.length > 1 && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => removeUrlInput(index)}
+                                  className="h-8 w-8 hover:bg-destructive/10 hover:text-destructive"
+                                >
+                                  <X className="h-4 w-4" />
+                                </Button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+
+                        {urlInputs.length < 4 && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={addUrlInput}
+                            className="w-full text-xs"
+                          >
+                            + Add URL
+                          </Button>
+                        )}
+
+                        <Button
+                          onClick={generateMdxFromUrlsList}
+                          disabled={isGeneratingMdx || !validateUrls()}
+                          className="w-full mt-2"
+                        >
+                          {isGeneratingMdx ? (
+                            <>
+                              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                              Generating...
+                            </>
+                          ) : (
+                            'Generate MDX from URLs'
+                          )}
+                        </Button>
+                      </div>
+                    )}
+
+                    {generationError && (
+                      <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-lg mt-4">
+                        {generationError}
+                      </div>
+                    )}
                   </div>
-                )}
+                </CardContent>
               </div>
-            </CardContent>
+            ) : (
+              <div className="flex flex-col items-center justify-start h-[calc(100%-40px)] pt-4">
+                <div className="bg-primary/10 text-primary rounded-full p-1.5 mb-4">
+                  <span className="sr-only">MDX Generation</span>
+                  {generationMethod === 'crawl' ? (
+                    <Search className="h-4 w-4" />
+                  ) : (
+                    <Link className="h-4 w-4" />
+                  )}
+                </div>
+                <div className="text-xs text-center px-1 font-medium rotate-90 whitespace-nowrap mt-4">
+                  {generationMethod === 'crawl' ? 'Crawl Mode' : 'URLs Mode'}
+                </div>
+              </div>
+            )}
           </Card>
         </div>
       )}
