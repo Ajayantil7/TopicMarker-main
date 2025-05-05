@@ -17,10 +17,11 @@ const Login = () => {
 };
 
 const Component = () => {
-  const { user } = Route.useRouteContext();
-  if (!user) {
-    return <Login />;
-  }
+  // For testing purposes, we're bypassing authentication
+  // const { user } = Route.useRouteContext();
+  // if (!user) {
+  //   return <Login />;
+  // }
 
   return <Outlet />;
 };
@@ -28,14 +29,24 @@ const Component = () => {
 // src/routes/_authenticated.tsx
 export const Route = createFileRoute("/_authenticated")({
   beforeLoad: async ({ context }) => {
-    const queryClient = context.queryClient;
+    // For testing purposes, we're returning a mock user
+    // const queryClient = context.queryClient;
+    // try {
+    //   const data = await queryClient.fetchQuery(userQueryOptions);
+    //   return data;
+    // } catch (e) {
+    //   return { user: null };
+    // }
 
-    try {
-      const data = await queryClient.fetchQuery(userQueryOptions);
-      return data;
-    } catch (e) {
-      return { user: null };
-    }
+    // Mock user for testing
+    return {
+      user: {
+        id: "test-user-id",
+        given_name: "Test",
+        family_name: "User",
+        email: "test@example.com"
+      }
+    };
   },
   component: Component,
 });

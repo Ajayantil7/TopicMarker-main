@@ -17,6 +17,7 @@ import { Route as AuthenticatedImport } from './routes/_authenticated'
 import { Route as AuthenticatedIndexImport } from './routes/_authenticated/index'
 import { Route as AuthenticatedProfileImport } from './routes/_authenticated/profile'
 import { Route as AuthenticatedMdxImport } from './routes/_authenticated/mdx'
+import { Route as AuthenticatedLessonPlanImport } from './routes/_authenticated/lesson-plan'
 
 // Create/Update Routes
 
@@ -50,6 +51,11 @@ const AuthenticatedMdxRoute = AuthenticatedMdxImport.update({
   getParentRoute: () => AuthenticatedRoute,
 } as any)
 
+const AuthenticatedLessonPlanRoute = AuthenticatedLessonPlanImport.update({
+  path: '/lesson-plan',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+
 // Populate the FileRoutesByPath interface
 
 declare module '@tanstack/react-router' {
@@ -65,6 +71,10 @@ declare module '@tanstack/react-router' {
     '/mdxPublic': {
       preLoaderRoute: typeof MdxPublicImport
       parentRoute: typeof rootRoute
+    }
+    '/_authenticated/lesson-plan': {
+      preLoaderRoute: typeof AuthenticatedLessonPlanImport
+      parentRoute: typeof AuthenticatedImport
     }
     '/_authenticated/mdx': {
       preLoaderRoute: typeof AuthenticatedMdxImport
@@ -85,6 +95,7 @@ declare module '@tanstack/react-router' {
 
 export const routeTree = rootRoute.addChildren([
   AuthenticatedRoute.addChildren([
+    AuthenticatedLessonPlanRoute,
     AuthenticatedMdxRoute,
     AuthenticatedProfileRoute,
     AuthenticatedIndexRoute,

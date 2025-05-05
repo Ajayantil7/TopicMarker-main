@@ -43,6 +43,23 @@ function Index() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Lesson Plan Card */}
+        <Card className="w-full shadow-lg hover:shadow-xl transition-shadow">
+          <CardHeader>
+            <CardTitle className="text-xl md:text-2xl">Lesson Plan</CardTitle>
+            <CardDescription>Generate comprehensive lesson plans with AI</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-col gap-2">
+              <Button asChild className="w-full justify-start">
+                <Link to="/lesson-plan">
+                  Create Lesson Plan
+                </Link>
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

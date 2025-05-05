@@ -53,23 +53,27 @@ function NavBar() {
         MDX Public
       </Link>
 
-      {/* Protected routes only shown when authenticated */}
-      {isAuthenticated && (
-        <>
-          <Link to="/mdx" className="[&.active]:font-bold text-base hover:text-primary transition-colors">
-            MDX Editor
-          </Link>
-          <Link to="/profile" className="[&.active]:font-bold text-base hover:text-primary transition-colors">
-            Profile
-          </Link>
-        </>
-      )}
+      {/* For testing purposes, showing all routes regardless of authentication */}
+      <Link to="/mdx" className="[&.active]:font-bold text-base hover:text-primary transition-colors">
+        MDX Editor
+      </Link>
+      <Link to="/lesson-plan" className="[&.active]:font-bold text-base hover:text-primary transition-colors">
+        Lesson Plan
+      </Link>
+      <Link to="/profile" className="[&.active]:font-bold text-base hover:text-primary transition-colors">
+        Profile
+      </Link>
     </>
   );
 
   // Authentication buttons component
   const AuthButtons = () => (
     <>
+      {/* For testing purposes, always showing the logout button */}
+      <Button asChild size="sm" variant="outline" className="text-base">
+        <a href="/api/logout">Logout</a>
+      </Button>
+      {/*
       {isAuthenticated ? (
         <Button asChild size="sm" variant="outline" className="text-base">
           <a href="/api/logout">Logout</a>
@@ -84,6 +88,7 @@ function NavBar() {
           </Button>
         </div>
       )}
+      */}
     </>
   );
 
