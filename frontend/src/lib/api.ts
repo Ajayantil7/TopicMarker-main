@@ -36,9 +36,9 @@ export async function searchTopics(query: string, limit?: number) {
 }
 
 // Generate MDX content for a single topic
-export async function generateSingleTopic(topic: string, numResults?: number) {
+export async function generateSingleTopic(selectedTopic: string, mainTopic: string, numResults?: number) {
   const res = await api.rag["single-topic"].$post({
-    json: { topic, num_results: numResults }
+    json: { selected_topic: selectedTopic, main_topic: mainTopic, topic: selectedTopic, num_results: numResults }
   });
   if (!res.ok) {
     throw new Error("Failed to generate MDX content");
@@ -48,21 +48,65 @@ export async function generateSingleTopic(topic: string, numResults?: number) {
 }
 
 // Generate raw MDX content for a single topic
-export async function generateSingleTopicRaw(topic: string, numResults?: number) {
-  const res = await api.rag["single-topic-raw"].$post({
-    json: { topic, num_results: numResults }
+export async function generateSingleTopicRaw(selectedTopic: string, mainTopic: string, numResults?: number) {
+  try {
+    console.log('API call params:', { selected_topic: selectedTopic, main_topic: mainTopic, topic: selectedTopic, num_results: numResults });
+    const res = await api.rag["single-topic-raw"].$post({
+      json: { selected_topic: selectedTopic, main_topic: mainTopic, topic: selectedTopic, num_results: numResults }
+    });
+
+    if (!res.ok) {
+      const errorText = await res.text().catch(() => 'No error text available');
+      console.error('Server error response:', errorText);
+      throw new Error(`Failed to generate raw MDX content: ${res.status} ${res.statusText}`);
+    }
+
+    const text = await res.text();
+    return text;
+  } catch (error) {
+    console.error('Error in generateSingleTopicRaw:', error);
+    throw error;
+  }
+}
+
+// Generate MDX content using LLM only
+export async function generateMdxLlmOnly(selectedTopic: string, mainTopic: string) {
+  const res = await api.rag["generate-mdx-llm-only"].$post({
+    json: { selected_topic: selectedTopic, main_topic: mainTopic, topic: selectedTopic }
   });
   if (!res.ok) {
-    throw new Error("Failed to generate raw MDX content");
+    throw new Error("Failed to generate MDX content using LLM only");
   }
-  const text = await res.text();
-  return text;
+  const data = await res.json();
+  return data;
+}
+
+// Generate raw MDX content using LLM only
+export async function generateMdxLlmOnlyRaw(selectedTopic: string, mainTopic: string) {
+  try {
+    console.log('API call params (LLM only):', { selected_topic: selectedTopic, main_topic: mainTopic, topic: selectedTopic });
+    const res = await api.rag["generate-mdx-llm-only-raw"].$post({
+      json: { selected_topic: selectedTopic, main_topic: mainTopic, topic: selectedTopic }
+    });
+
+    if (!res.ok) {
+      const errorText = await res.text().catch(() => 'No error text available');
+      console.error('Server error response (LLM only):', errorText);
+      throw new Error(`Failed to generate raw MDX content using LLM only: ${res.status} ${res.statusText}`);
+    }
+
+    const text = await res.text();
+    return text;
+  } catch (error) {
+    console.error('Error in generateMdxLlmOnlyRaw:', error);
+    throw error;
+  }
 }
 
 // Generate MDX content from a URL
-export async function generateMdxFromUrl(url: string, topic: string, useLlmKnowledge?: boolean) {
+export async function generateMdxFromUrl(url: string, selectedTopic: string, mainTopic: string, topic?: string, useLlmKnowledge?: boolean) {
   const res = await api.rag["generate-mdx-from-url"].$post({
-    json: { url, topic, use_llm_knowledge: useLlmKnowledge }
+    json: { url, selected_topic: selectedTopic, main_topic: mainTopic, topic, use_llm_knowledge: useLlmKnowledge }
   });
   if (!res.ok) {
     throw new Error("Failed to generate MDX from URL");
@@ -72,9 +116,9 @@ export async function generateMdxFromUrl(url: string, topic: string, useLlmKnowl
 }
 
 // Generate raw MDX content from a URL
-export async function generateMdxFromUrlRaw(url: string, topic: string, useLlmKnowledge?: boolean) {
+export async function generateMdxFromUrlRaw(url: string, selectedTopic: string, mainTopic: string, topic?: string, useLlmKnowledge?: boolean) {
   const res = await api.rag["generate-mdx-from-url-raw"].$post({
-    json: { url, topic, use_llm_knowledge: useLlmKnowledge }
+    json: { url, selected_topic: selectedTopic, main_topic: mainTopic, topic, use_llm_knowledge: useLlmKnowledge }
   });
   if (!res.ok) {
     throw new Error("Failed to generate raw MDX from URL");
@@ -84,9 +128,9 @@ export async function generateMdxFromUrlRaw(url: string, topic: string, useLlmKn
 }
 
 // Generate MDX content from multiple URLs
-export async function generateMdxFromUrls(urls: string[], topic: string, useLlmKnowledge?: boolean) {
+export async function generateMdxFromUrls(urls: string[], selectedTopic: string, mainTopic: string, topic?: string, useLlmKnowledge?: boolean) {
   const res = await api.rag["generate-mdx-from-urls"].$post({
-    json: { urls, topic, use_llm_knowledge: useLlmKnowledge }
+    json: { urls, selected_topic: selectedTopic, main_topic: mainTopic, topic, use_llm_knowledge: useLlmKnowledge }
   });
   if (!res.ok) {
     throw new Error("Failed to generate MDX from URLs");
@@ -96,15 +140,32 @@ export async function generateMdxFromUrls(urls: string[], topic: string, useLlmK
 }
 
 // Generate raw MDX content from multiple URLs
-export async function generateMdxFromUrlsRaw(urls: string[], topic: string, useLlmKnowledge?: boolean) {
-  const res = await api.rag["generate-mdx-from-urls-raw"].$post({
-    json: { urls, topic, use_llm_knowledge: useLlmKnowledge }
-  });
-  if (!res.ok) {
-    throw new Error("Failed to generate raw MDX from URLs");
+export async function generateMdxFromUrlsRaw(urls: string[], selectedTopic: string, mainTopic: string, topic?: string, useLlmKnowledge?: boolean) {
+  try {
+    console.log('API call params (URLs):', {
+      urls,
+      selected_topic: selectedTopic,
+      main_topic: mainTopic,
+      topic,
+      use_llm_knowledge: useLlmKnowledge
+    });
+
+    const res = await api.rag["generate-mdx-from-urls-raw"].$post({
+      json: { urls, selected_topic: selectedTopic, main_topic: mainTopic, topic, use_llm_knowledge: useLlmKnowledge }
+    });
+
+    if (!res.ok) {
+      const errorText = await res.text().catch(() => 'No error text available');
+      console.error('Server error response (URLs):', errorText);
+      throw new Error(`Failed to generate raw MDX from URLs: ${res.status} ${res.statusText}`);
+    }
+
+    const text = await res.text();
+    return text;
+  } catch (error) {
+    console.error('Error in generateMdxFromUrlsRaw:', error);
+    throw error;
   }
-  const text = await res.text();
-  return text;
 }
 
 // Refine content

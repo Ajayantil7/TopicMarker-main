@@ -5,7 +5,8 @@ import {
   searchTopics,
   generateSingleTopic,
   generateSingleTopicRaw,
-  generateMdxFromUrlsRaw
+  generateMdxFromUrlsRaw,
+  generateMdxLlmOnlyRaw
 } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -28,10 +29,46 @@ interface UrlInput {
   isValid: boolean;
 }
 
+interface MdxResponse {
+  status: string;
+  data: {
+    mdx_content: string;
+    crawled_websites?: string[];
+  };
+}
+
+interface TopicsResponse {
+  status: string;
+  data: {
+    topics: string;
+  };
+}
+
+// Type guard function to check if the response is a TopicsResponse
+function isTopicsResponse(data: any): data is TopicsResponse {
+  return data &&
+    typeof data === 'object' &&
+    'status' in data &&
+    'data' in data &&
+    data.data &&
+    'topics' in data.data;
+}
+
+// Type guard function to check if the response is an MdxResponse
+function isMdxResponse(data: any): data is MdxResponse {
+  return data &&
+    typeof data === 'object' &&
+    'status' in data &&
+    'data' in data &&
+    data.data &&
+    'mdx_content' in data.data;
+}
+
 function LessonPlan() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
   const [selectedSubtopic, setSelectedSubtopic] = useState<string | null>(null);
+  const [mainTopic, setMainTopic] = useState<string | null>(null); // Track the main topic separately
   const [showRightSidebar, setShowRightSidebar] = useState(false);
   const [urlInputs, setUrlInputs] = useState<UrlInput[]>([{ value: '', isValid: false }]);
   const [mdxContent, setMdxContent] = useState<string>('');
@@ -39,7 +76,7 @@ function LessonPlan() {
   const [isEditorFullscreen, setIsEditorFullscreen] = useState(false);
   const [isPreviewFullscreen, setIsPreviewFullscreen] = useState(false);
   const [showEditor, setShowEditor] = useState(false);
-  const [generationMethod, setGenerationMethod] = useState<'crawl' | 'urls'>('crawl');
+  const [generationMethod, setGenerationMethod] = useState<'crawl' | 'urls' | 'llm'>('crawl');
   const [generationError, setGenerationError] = useState<string | null>(null);
   const [isMobileView, setIsMobileView] = useState(false);
   const [activeTab, setActiveTab] = useState<'editor' | 'preview'>('editor');
@@ -64,14 +101,27 @@ function LessonPlan() {
     isLoading: isLoadingMdx,
     isError: isMdxError,
   } = useQuery({
-    queryKey: ['generate-mdx', selectedTopic || selectedSubtopic],
-    queryFn: () => generateSingleTopic(selectedTopic || selectedSubtopic || '', 2),
+    queryKey: ['generate-mdx', selectedTopic || selectedSubtopic, mainTopic],
+    queryFn: () => {
+      const selectedTopicValue = selectedTopic || selectedSubtopic || '';
+      // Use the tracked mainTopic state
+      const mainTopicValue = mainTopic || '';
+      console.log('Auto-generating MDX with:', {
+        selected_topic: selectedTopicValue,
+        main_topic: mainTopicValue
+      });
+      return generateSingleTopic(selectedTopicValue, mainTopicValue, 2);
+    },
     enabled: !!(selectedTopic || selectedSubtopic) && !showRightSidebar && !showEditor,
   });
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     if (searchQuery.trim()) {
+      // Store the search query as the main topic
+      const searchTerm = searchQuery.trim();
+      console.log('Setting main topic to search query:', searchTerm);
+      setMainTopic(searchTerm);
       refetchTopics();
     }
   };
@@ -79,15 +129,19 @@ function LessonPlan() {
   const handleTopicSelect = (topic: string) => {
     setSelectedTopic(topic);
     setSelectedSubtopic(null);
+    // Keep the search query as the main topic instead of setting it to the selected topic
+    // setMainTopic(topic);
     setShowRightSidebar(true);
     setShowEditor(false);
     setMdxContent('');
     setGenerationError(null);
   };
 
-  const handleSubtopicSelect = (subtopic: string) => {
+  const handleSubtopicSelect = (subtopic: string, parentTopic: string) => {
     setSelectedSubtopic(subtopic);
     setSelectedTopic(null);
+    // Keep the search query as the main topic instead of setting it to the parent topic
+    // setMainTopic(parentTopic);
     setShowRightSidebar(true);
     setShowEditor(false);
     setMdxContent('');
@@ -124,8 +178,17 @@ function LessonPlan() {
     setIsGeneratingMdx(true);
     setGenerationError(null);
     try {
-      const currentTopic = selectedTopic || selectedSubtopic || '';
-      const rawMdx = await generateSingleTopicRaw(currentTopic, 3);
+      const selectedTopicValue = selectedTopic || selectedSubtopic || '';
+      // Use the tracked mainTopic state
+      const mainTopicValue = mainTopic || '';
+
+      console.log('Generating MDX with:', {
+        selected_topic: selectedTopicValue,
+        main_topic: mainTopicValue,
+        search_query: searchQuery
+      });
+
+      const rawMdx = await generateSingleTopicRaw(selectedTopicValue, mainTopicValue, 3);
       setMdxContent(rawMdx);
       setShowEditor(true);
       // Keep the right sidebar visible
@@ -147,10 +210,18 @@ function LessonPlan() {
     setIsGeneratingMdx(true);
     setGenerationError(null);
     try {
-      const currentTopic = selectedTopic || selectedSubtopic || '';
+      const selectedTopicValue = selectedTopic || selectedSubtopic || '';
+      // Use the tracked mainTopic state
+      const mainTopicValue = mainTopic || '';
       const validUrls = urlInputs.filter(url => url.isValid).map(url => url.value);
 
-      const rawMdx = await generateMdxFromUrlsRaw(validUrls, currentTopic, true);
+      console.log('Generating MDX from URLs with:', {
+        urls: validUrls,
+        selected_topic: selectedTopicValue,
+        main_topic: mainTopicValue
+      });
+
+      const rawMdx = await generateMdxFromUrlsRaw(validUrls, selectedTopicValue, mainTopicValue, undefined, true);
       setMdxContent(rawMdx);
       setShowEditor(true);
       // Keep the right sidebar visible
@@ -158,6 +229,32 @@ function LessonPlan() {
     } catch (error) {
       console.error('Error generating MDX from URLs:', error);
       setGenerationError('Failed to generate MDX content from URLs. Please try again.');
+    } finally {
+      setIsGeneratingMdx(false);
+    }
+  };
+
+  const generateMdxFromLlmOnly = async () => {
+    setIsGeneratingMdx(true);
+    setGenerationError(null);
+    try {
+      const selectedTopicValue = selectedTopic || selectedSubtopic || '';
+      // Use the tracked mainTopic state
+      const mainTopicValue = mainTopic || '';
+
+      console.log('Generating MDX with LLM only:', {
+        selected_topic: selectedTopicValue,
+        main_topic: mainTopicValue
+      });
+
+      const rawMdx = await generateMdxLlmOnlyRaw(selectedTopicValue, mainTopicValue);
+      setMdxContent(rawMdx);
+      setShowEditor(true);
+      // Keep the right sidebar visible
+      setShowRightSidebar(true);
+    } catch (error) {
+      console.error('Error generating MDX using LLM only:', error);
+      setGenerationError('Failed to generate MDX content using LLM only. Please try again.');
     } finally {
       setIsGeneratingMdx(false);
     }
@@ -290,7 +387,8 @@ function LessonPlan() {
                   </div>
                 )}
 
-                {topicsData?.status === 'success' && topicsData.data?.topics && (
+                {topicsData && isTopicsResponse(topicsData) && topicsData.status === 'success' &&
+                 topicsData.data?.topics && (
                   <div className="space-y-2">
                     {(() => {
                       try {
@@ -327,7 +425,7 @@ function LessonPlan() {
                                         ? 'bg-secondary/50 text-secondary-foreground'
                                         : 'hover:bg-muted'
                                     }`}
-                                    onClick={() => handleSubtopicSelect(subtopic)}
+                                    onClick={() => handleSubtopicSelect(subtopic, topic.topic)}
                                   >
                                     {subtopic}
                                   </div>
@@ -358,13 +456,8 @@ function LessonPlan() {
                 <Search className="h-4 w-4" />
               </div>
               <div className="text-xs text-center px-1 font-medium rotate-90 whitespace-nowrap mt-4">
-                Hierarchy
+                {searchQuery ? (searchQuery.length > 15 ? `${searchQuery.substring(0, 15)}...` : searchQuery) : "Hierarchy"}
               </div>
-              {selectedTopic && (
-                <div className="text-xs text-center px-1 font-medium rotate-90 whitespace-nowrap mt-4">
-                  {selectedTopic.length > 15 ? `${selectedTopic.substring(0, 15)}...` : selectedTopic}
-                </div>
-              )}
             </div>
           )}
         </Card>
@@ -430,6 +523,16 @@ function LessonPlan() {
                         : 'hover:bg-background/80'}`}
                     >
                       URLs
+                    </Button>
+                    <Button
+                      onClick={() => setGenerationMethod('llm')}
+                      variant="ghost"
+                      size="sm"
+                      className={`flex-1 ${generationMethod === 'llm'
+                        ? 'bg-background shadow-sm'
+                        : 'hover:bg-background/80'}`}
+                    >
+                      LLM Only
                     </Button>
                   </div>
                 </div>
@@ -520,6 +623,33 @@ function LessonPlan() {
                       </div>
                     )}
 
+                    {generationMethod === 'llm' && (
+                      <div className="space-y-4">
+                        <div className="bg-muted/30 rounded-lg p-3 text-sm text-muted-foreground">
+                          <p>
+                            This will generate MDX content using only the LLM's knowledge without web crawling.
+                          </p>
+                          <p className="mt-2">
+                            Use this option when you want faster generation or when the topic is well-known.
+                          </p>
+                        </div>
+                        <Button
+                          onClick={generateMdxFromLlmOnly}
+                          disabled={isGeneratingMdx}
+                          className="w-full"
+                        >
+                          {isGeneratingMdx ? (
+                            <>
+                              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                              Generating...
+                            </>
+                          ) : (
+                            'Generate MDX using LLM Only'
+                          )}
+                        </Button>
+                      </div>
+                    )}
+
                     {generationError && (
                       <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-lg mt-4">
                         {generationError}
@@ -534,12 +664,18 @@ function LessonPlan() {
                   <span className="sr-only">MDX Generation</span>
                   {generationMethod === 'crawl' ? (
                     <Search className="h-4 w-4" />
-                  ) : (
+                  ) : generationMethod === 'urls' ? (
                     <Link className="h-4 w-4" />
+                  ) : (
+                    <span className="h-4 w-4 flex items-center justify-center text-xs font-bold">AI</span>
                   )}
                 </div>
                 <div className="text-xs text-center px-1 font-medium rotate-90 whitespace-nowrap mt-4">
-                  {generationMethod === 'crawl' ? 'Crawl Mode' : 'URLs Mode'}
+                  {generationMethod === 'crawl'
+                    ? 'Crawl Mode'
+                    : generationMethod === 'urls'
+                      ? 'URLs Mode'
+                      : 'LLM Mode'}
                 </div>
               </div>
             )}
@@ -576,7 +712,8 @@ function LessonPlan() {
                 </div>
               )}
 
-              {mdxData?.status === 'success' && mdxData.data?.mdx_content && (
+              {mdxData && isMdxResponse(mdxData) && mdxData.status === 'success' &&
+               mdxData.data?.mdx_content && (
                 <div className="prose dark:prose-invert max-w-none">
                   <MDXRenderer content={mdxData.data.mdx_content} />
                 </div>
