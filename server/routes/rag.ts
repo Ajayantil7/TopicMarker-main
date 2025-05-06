@@ -56,6 +56,7 @@ const refineWithSelectionSchema = z.object({
   question: z.string().min(1),
   selected_text: z.string(),
   topic: z.string().min(1),
+  direct_replacement: z.string().optional(), // Optional parameter for direct text replacement
 });
 
 // Schema for content refinement with crawling
@@ -832,8 +833,35 @@ For now, you can try using the URL-based generation method which might have cach
     "/refine-with-selection",
     zValidator("json", refineWithSelectionSchema),
     async (c) => {
-      const { mdx, question, selected_text, topic } = c.req.valid("json");
+      const { mdx, question, selected_text, topic, direct_replacement } = c.req.valid("json");
       try {
+        // If direct_replacement is provided, we'll skip the RAG service and do the replacement directly
+        if (direct_replacement) {
+          console.log("Server received request for direct text replacement:", {
+            mdx: mdx.substring(0, 50) + "...", // Log just a snippet of the MDX
+            selected_text: selected_text.substring(0, 50) + (selected_text.length > 50 ? "..." : ""),
+            direct_replacement: direct_replacement.substring(0, 50) + (direct_replacement.length > 50 ? "..." : ""),
+            topic
+          });
+
+          // Simple string replacement - replace the selected_text with direct_replacement
+          const updatedMdx = mdx.replace(selected_text, direct_replacement);
+          return c.json({
+            status: "success",
+            data: {
+              mdx_content: updatedMdx
+            }
+          });
+        }
+
+        console.log("Server received request for refine-with-selection:", {
+          mdx: mdx.substring(0, 50) + "...", // Log just a snippet of the MDX
+          question,
+          selected_text,
+          topic
+        });
+
+        // The RAG backend expects selected_topic and main_topic
         const response = await fetch(
           `${RAG_SERVICE_URL}/rag/refine-with-selection`,
           {
@@ -841,7 +869,13 @@ For now, you can try using the URL-based generation method which might have cach
             headers: {
               "Content-Type": "application/json",
             },
-            body: JSON.stringify({ mdx, question, selected_text, topic }),
+            body: JSON.stringify({
+              mdx,
+              question,
+              selected_text,
+              selected_topic: topic,
+              main_topic: topic  // Using topic as main_topic as well
+            }),
           }
         );
 
@@ -865,8 +899,31 @@ For now, you can try using the URL-based generation method which might have cach
     "/refine-with-selection-raw",
     zValidator("json", refineWithSelectionSchema),
     async (c) => {
-      const { mdx, question, selected_text, topic } = c.req.valid("json");
+      const { mdx, question, selected_text, topic, direct_replacement } = c.req.valid("json");
       try {
+        // If direct_replacement is provided, we'll skip the RAG service and do the replacement directly
+        if (direct_replacement) {
+          console.log("Server received request for direct text replacement:", {
+            mdx: mdx.substring(0, 50) + "...", // Log just a snippet of the MDX
+            selected_text: selected_text.substring(0, 50) + (selected_text.length > 50 ? "..." : ""),
+            direct_replacement: direct_replacement.substring(0, 50) + (direct_replacement.length > 50 ? "..." : ""),
+            topic
+          });
+
+          // Simple string replacement - replace the selected_text with direct_replacement
+          const updatedMdx = mdx.replace(selected_text, direct_replacement);
+          return c.text(updatedMdx);
+        }
+
+        // Otherwise, proceed with the normal RAG service refinement
+        console.log("Server received request for refine-with-selection-raw:", {
+          mdx: mdx.substring(0, 50) + "...", // Log just a snippet of the MDX
+          question,
+          selected_text,
+          topic
+        });
+
+        // The RAG backend expects selected_topic and main_topic
         const response = await fetch(
           `${RAG_SERVICE_URL}/rag/refine-with-selection-raw`,
           {
@@ -874,7 +931,13 @@ For now, you can try using the URL-based generation method which might have cach
             headers: {
               "Content-Type": "application/json",
             },
-            body: JSON.stringify({ mdx, question, selected_text, topic }),
+            body: JSON.stringify({
+              mdx,
+              question,
+              selected_text,
+              selected_topic: topic,
+              main_topic: topic  // Using topic as main_topic as well
+            }),
           }
         );
 
@@ -898,6 +961,15 @@ For now, you can try using the URL-based generation method which might have cach
       const { mdx, question, selected_text, topic, num_results } =
         c.req.valid("json");
       try {
+        console.log("Server received request for refine-with-crawling:", {
+          mdx: mdx.substring(0, 50) + "...", // Log just a snippet of the MDX
+          question,
+          selected_text,
+          topic,
+          num_results
+        });
+
+        // The RAG backend expects selected_topic and main_topic
         const response = await fetch(
           `${RAG_SERVICE_URL}/rag/refine-with-crawling`,
           {
@@ -909,7 +981,8 @@ For now, you can try using the URL-based generation method which might have cach
               mdx,
               question,
               selected_text,
-              topic,
+              selected_topic: topic,
+              main_topic: topic,  // Using topic as main_topic as well
               num_results,
             }),
           }
@@ -935,6 +1008,15 @@ For now, you can try using the URL-based generation method which might have cach
       const { mdx, question, selected_text, topic, num_results } =
         c.req.valid("json");
       try {
+        console.log("Server received request for refine-with-crawling-raw:", {
+          mdx: mdx.substring(0, 50) + "...", // Log just a snippet of the MDX
+          question,
+          selected_text,
+          topic,
+          num_results
+        });
+
+        // The RAG backend expects selected_topic and main_topic
         const response = await fetch(
           `${RAG_SERVICE_URL}/rag/refine-with-crawling-raw`,
           {
@@ -946,7 +1028,8 @@ For now, you can try using the URL-based generation method which might have cach
               mdx,
               question,
               selected_text,
-              topic,
+              selected_topic: topic,
+              main_topic: topic,  // Using topic as main_topic as well
               num_results,
             }),
           }
@@ -971,6 +1054,15 @@ For now, you can try using the URL-based generation method which might have cach
     async (c) => {
       const { mdx, question, selected_text, topic, urls } = c.req.valid("json");
       try {
+        console.log("Server received request for refine-with-urls:", {
+          mdx: mdx.substring(0, 50) + "...", // Log just a snippet of the MDX
+          question,
+          selected_text,
+          topic,
+          urls
+        });
+
+        // The RAG backend expects selected_topic and main_topic
         const response = await fetch(
           `${RAG_SERVICE_URL}/rag/refine-with-urls`,
           {
@@ -978,7 +1070,14 @@ For now, you can try using the URL-based generation method which might have cach
             headers: {
               "Content-Type": "application/json",
             },
-            body: JSON.stringify({ mdx, question, selected_text, topic, urls }),
+            body: JSON.stringify({
+              mdx,
+              question,
+              selected_text,
+              selected_topic: topic,
+              main_topic: topic,  // Using topic as main_topic as well
+              urls
+            }),
           }
         );
 
@@ -1001,6 +1100,15 @@ For now, you can try using the URL-based generation method which might have cach
     async (c) => {
       const { mdx, question, selected_text, topic, urls } = c.req.valid("json");
       try {
+        console.log("Server received request for refine-with-urls-raw:", {
+          mdx: mdx.substring(0, 50) + "...", // Log just a snippet of the MDX
+          question,
+          selected_text,
+          topic,
+          urls
+        });
+
+        // The RAG backend expects selected_topic and main_topic
         const response = await fetch(
           `${RAG_SERVICE_URL}/rag/refine-with-urls-raw`,
           {
@@ -1008,7 +1116,14 @@ For now, you can try using the URL-based generation method which might have cach
             headers: {
               "Content-Type": "application/json",
             },
-            body: JSON.stringify({ mdx, question, selected_text, topic, urls }),
+            body: JSON.stringify({
+              mdx,
+              question,
+              selected_text,
+              selected_topic: topic,
+              main_topic: topic,  // Using topic as main_topic as well
+              urls
+            }),
           }
         );
 

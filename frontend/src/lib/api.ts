@@ -228,6 +228,161 @@ export async function refineWithUrls(
   return data;
 }
 
+// Refine content with selection (raw)
+export async function refineWithSelectionRaw(
+  mdx: string,
+  question: string,
+  selectedText: string,
+  selectedTopic: string,
+  mainTopic: string
+) {
+  try {
+    console.log('API call params (refine with selection):', {
+      mdx: mdx.substring(0, 50) + "...", // Log just a snippet of the MDX
+      question,
+      selected_text: selectedText,
+      selected_topic: selectedTopic,
+      main_topic: mainTopic
+    });
+
+    const res = await api.rag["refine-with-selection-raw"].$post({
+      json: {
+        mdx,
+        question,
+        selected_text: selectedText,
+        topic: selectedTopic  // Server will map this to selected_topic and main_topic
+      }
+    });
+
+    if (!res.ok) {
+      const errorText = await res.text().catch(() => 'No error text available');
+      console.error('Server error response (refine with selection):', errorText);
+      throw new Error(`Failed to refine content with selection: ${res.status} ${res.statusText}`);
+    }
+
+    const refinedText = await res.text();
+
+    // Replace only the selected text with the refined content
+    return mdx.replace(selectedText, refinedText);
+  } catch (error) {
+    console.error('Error in refineWithSelectionRaw:', error);
+    throw error;
+  }
+}
+
+// Direct replacement of selected text with new content
+export async function directReplaceSelectedText(
+  mdx: string,
+  selectedText: string,
+  replacementText: string,
+  topic: string
+) {
+  try {
+    console.log('API call params (direct text replacement):', {
+      mdx: mdx.substring(0, 50) + "...", // Log just a snippet of the MDX
+      selected_text: selectedText.substring(0, 50) + (selectedText.length > 50 ? "..." : ""),
+      replacement_text: replacementText.substring(0, 50) + (replacementText.length > 50 ? "..." : ""),
+      topic
+    });
+
+    // Simple client-side replacement without server call
+    return mdx.replace(selectedText, replacementText);
+  } catch (error) {
+    console.error('Error in directReplaceSelectedText:', error);
+    throw error;
+  }
+}
+
+// Refine content with crawling (raw)
+export async function refineWithCrawlingRaw(
+  mdx: string,
+  question: string,
+  selectedText: string,
+  selectedTopic: string,
+  mainTopic: string,
+  numResults?: number
+) {
+  try {
+    console.log('API call params (refine with crawling):', {
+      mdx: mdx.substring(0, 50) + "...", // Log just a snippet of the MDX
+      question,
+      selected_text: selectedText,
+      selected_topic: selectedTopic,
+      main_topic: mainTopic,
+      num_results: numResults
+    });
+
+    const res = await api.rag["refine-with-crawling-raw"].$post({
+      json: {
+        mdx,
+        question,
+        selected_text: selectedText,
+        topic: selectedTopic,  // Server will map this to selected_topic and main_topic
+        num_results: numResults
+      }
+    });
+
+    if (!res.ok) {
+      const errorText = await res.text().catch(() => 'No error text available');
+      console.error('Server error response (refine with crawling):', errorText);
+      throw new Error(`Failed to refine content with crawling: ${res.status} ${res.statusText}`);
+    }
+
+    const refinedText = await res.text();
+
+    // Replace only the selected text with the refined content
+    return mdx.replace(selectedText, refinedText);
+  } catch (error) {
+    console.error('Error in refineWithCrawlingRaw:', error);
+    throw error;
+  }
+}
+
+// Refine content with URLs (raw)
+export async function refineWithUrlsRaw(
+  mdx: string,
+  question: string,
+  selectedText: string,
+  selectedTopic: string,
+  mainTopic: string,
+  urls: string[]
+) {
+  try {
+    console.log('API call params (refine with URLs):', {
+      mdx: mdx.substring(0, 50) + "...", // Log just a snippet of the MDX
+      question,
+      selected_text: selectedText,
+      selected_topic: selectedTopic,
+      main_topic: mainTopic,
+      urls
+    });
+
+    const res = await api.rag["refine-with-urls-raw"].$post({
+      json: {
+        mdx,
+        question,
+        selected_text: selectedText,
+        topic: selectedTopic,  // Server will map this to selected_topic and main_topic
+        urls
+      }
+    });
+
+    if (!res.ok) {
+      const errorText = await res.text().catch(() => 'No error text available');
+      console.error('Server error response (refine with URLs):', errorText);
+      throw new Error(`Failed to refine content with URLs: ${res.status} ${res.statusText}`);
+    }
+
+    const refinedText = await res.text();
+
+    // Replace only the selected text with the refined content
+    return mdx.replace(selectedText, refinedText);
+  } catch (error) {
+    console.error('Error in refineWithUrlsRaw:', error);
+    throw error;
+  }
+}
+
 // React Query options
 export const searchTopicsQueryOptions = queryOptions({
   queryKey: ["search-topics", "", undefined] as [string, string, number | undefined],
