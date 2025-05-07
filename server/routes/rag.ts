@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import { zValidator } from "@hono/zod-validator";
+import { getUser } from "../kinde";
 
 // Base RAG service URL
 const RAG_SERVICE_URL = "http://127.0.0.1:8000";
@@ -79,7 +80,7 @@ const refineWithUrlsSchema = z.object({
 
 export const ragRoute = new Hono()
   // Topic Generation
-  .post("/search-topics", zValidator("json", searchTopicsSchema), async (c) => {
+  .post("/search-topics", getUser, zValidator("json", searchTopicsSchema), async (c) => {
     const { query, limit } = c.req.valid("json");
     try {
       const response = await fetch(`${RAG_SERVICE_URL}/rag/search-topics`, {
@@ -103,7 +104,7 @@ export const ragRoute = new Hono()
   })
 
   // MDX Generation
-  .post("/single-topic", zValidator("json", singleTopicSchema), async (c) => {
+  .post("/single-topic", getUser, zValidator("json", singleTopicSchema), async (c) => {
     const { selected_topic, main_topic, topic, num_results } =
       c.req.valid("json");
     try {
@@ -147,6 +148,7 @@ export const ragRoute = new Hono()
 
   .post(
     "/single-topic-raw",
+    getUser,
     zValidator("json", singleTopicSchema),
     async (c) => {
       const { selected_topic, main_topic, topic, num_results } =
@@ -163,6 +165,7 @@ export const ragRoute = new Hono()
         const requestBody: any = {
           main_topic,
           num_results,
+          selected_topic
         };
 
         // Use the provided topic if it exists, otherwise use selected_topic
@@ -208,6 +211,7 @@ export const ragRoute = new Hono()
   // LLM-only MDX Generation
   .post(
     "/generate-mdx-llm-only",
+    getUser,
     zValidator("json", llmOnlyMdxSchema),
     async (c) => {
       const { selected_topic, main_topic, topic } = c.req.valid("json");
@@ -431,6 +435,7 @@ For now, you can try using the URL-based generation method which might have cach
 
   .post(
     "/generate-mdx-llm-only-raw",
+    getUser,
     zValidator("json", llmOnlyMdxSchema),
     async (c) => {
       const { selected_topic, main_topic, topic } = c.req.valid("json");

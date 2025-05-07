@@ -35,6 +35,57 @@ export async function searchTopics(query: string, limit?: number) {
   return data;
 }
 
+// Save MDX content for a topic
+export async function saveMdxContent(selectedTopic: string, mainTopic: string, mdxContent: string) {
+  try {
+    console.log('Saving MDX content with:', {
+      axiosWing: mainTopic,
+      topic: selectedTopic,
+      difficulty: "Beginner",
+      mdxContent: mdxContent.substring(0, 100) + '...' // Log just the beginning for debugging
+    });
+
+    const res = await api.topics.$post({
+      json: {
+        axiosWing: mainTopic, // Using mainTopic as the axiosWing (note the 's' in axios)
+        topic: selectedTopic,
+        difficulty: "Beginner", // Default difficulty
+        mdxContent: mdxContent
+      }
+    });
+
+    if (!res.ok) {
+      const errorText = await res.text().catch(() => 'No error text available');
+      console.error('Server error response when saving MDX:', errorText);
+      throw new Error(`Failed to save MDX content: ${res.status} ${res.statusText}`);
+    }
+
+    const data = await res.json();
+    console.log('MDX content saved successfully:', data);
+    return data;
+  } catch (error) {
+    console.error('Error in saveMdxContent:', error);
+    throw error;
+  }
+}
+
+// Get saved MDX content for a topic
+export async function getSavedTopics() {
+  try {
+    const res = await api.topics.$get();
+
+    if (!res.ok) {
+      throw new Error("Failed to get saved topics");
+    }
+
+    const data = await res.json();
+    return data;
+  } catch (error) {
+    console.error('Error in getSavedTopics:', error);
+    throw error;
+  }
+}
+
 // Generate MDX content for a single topic
 export async function generateSingleTopic(selectedTopic: string, mainTopic: string, numResults?: number) {
   const res = await api.rag["single-topic"].$post({

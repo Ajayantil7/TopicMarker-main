@@ -5,11 +5,10 @@ import {
 } from "@tanstack/react-router";
 import { Toaster } from "@/components/ui/sonner"
 import { type QueryClient } from "@tanstack/react-query";
-import { useQuery } from "@tanstack/react-query";
-import { userQueryOptions } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { useState, useEffect } from "react";
-import { Menu, X } from "lucide-react";
+import { Menu, X, User } from "lucide-react";
+import { useAuth } from "@/lib/auth-context";
 // import { TanStackRouterDevtools } from '@tanstack/router-devtools'
 
 interface MyRouterContext {
@@ -21,9 +20,8 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
 });
 
 function NavBar() {
-  // Query to check if user is authenticated
-  const { data, isError } = useQuery(userQueryOptions);
-  const isAuthenticated = !isError && data?.user;
+  // Use our auth context
+  const { user, isAuthenticated, isLoading, logout } = useAuth();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [windowWidth, setWindowWidth] = useState(
     typeof window !== 'undefined' ? window.innerWidth : 0
@@ -53,31 +51,50 @@ function NavBar() {
         MDX Public
       </Link>
 
-      {/* For testing purposes, showing all routes regardless of authentication */}
-      <Link to="/mdx" className="[&.active]:font-bold text-base hover:text-primary transition-colors">
-        MDX Editor
-      </Link>
-      <Link to="/lesson-plan" className="[&.active]:font-bold text-base hover:text-primary transition-colors">
-        Lesson Plan
-      </Link>
-      <Link to="/profile" className="[&.active]:font-bold text-base hover:text-primary transition-colors">
-        Profile
-      </Link>
+      {/* Only show authenticated routes when logged in */}
+      {isAuthenticated && (
+        <>
+          <Link to="/mdx" className="[&.active]:font-bold text-base hover:text-primary transition-colors">
+            MDX Editor
+          </Link>
+          <Link to="/lesson-plan" className="[&.active]:font-bold text-base hover:text-primary transition-colors">
+            Lesson Plan
+          </Link>
+          <Link to="/profile" className="[&.active]:font-bold text-base hover:text-primary transition-colors">
+            Profile
+          </Link>
+        </>
+      )}
     </>
   );
 
   // Authentication buttons component
   const AuthButtons = () => (
     <>
-      {/* For testing purposes, always showing the logout button */}
-      <Button asChild size="sm" variant="outline" className="text-base">
-        <a href="/api/logout">Logout</a>
-      </Button>
-      {/*
-      {isAuthenticated ? (
-        <Button asChild size="sm" variant="outline" className="text-base">
-          <a href="/api/logout">Logout</a>
+      {isLoading ? (
+        <Button size="sm" variant="ghost" disabled className="text-base opacity-70">
+          <span className="animate-pulse">Authenticating...</span>
         </Button>
+      ) : isAuthenticated ? (
+        <div className="flex items-center gap-2">
+          {user?.given_name && (
+            <div className="hidden md:flex items-center gap-2 text-sm text-muted-foreground">
+              <User className="h-4 w-4" />
+              <span>{user.given_name}</span>
+            </div>
+          )}
+          <Button
+            size="sm"
+            variant="outline"
+            className="text-base"
+            onClick={(e) => {
+              e.preventDefault();
+              logout();
+            }}
+          >
+            Logout
+          </Button>
+        </div>
       ) : (
         <div className="flex gap-2">
           <Button asChild size="sm" variant="outline" className="text-base">
@@ -88,7 +105,6 @@ function NavBar() {
           </Button>
         </div>
       )}
-      */}
     </>
   );
 

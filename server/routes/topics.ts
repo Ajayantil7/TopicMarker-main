@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { getUser } from "../kinde";
+import { hasRole, hasAnyRole } from "../middleware/authorize";
 import { db } from "../db";
 import {
     topics as topicTable,
@@ -11,7 +12,7 @@ import { z } from "zod";
 
 // Define the create topic schema for API validation
 export const createTopicSchema = z.object({
-    axiomWing: z.string().min(1),
+    axiosWing: z.string().min(1),
     topic: z.string().min(3),
     difficulty: z.enum(["Beginner", "Intermediate", "Advanced"]),
     mdxContent: z.string().min(10)

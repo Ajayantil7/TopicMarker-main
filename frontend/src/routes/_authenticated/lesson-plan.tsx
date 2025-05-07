@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -10,7 +10,9 @@ import {
   generateMdxLlmOnlyRaw,
   refineWithSelectionRaw,
   refineWithCrawlingRaw,
-  refineWithUrlsRaw
+  refineWithUrlsRaw,
+  saveMdxContent,
+  getSavedTopics
 } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -18,6 +20,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { MDXRenderer } from '@/components/mdxRenderer';
 import { Loader2, Search, X, Maximize2, Minimize2, ChevronLeft, ChevronRight, Link } from 'lucide-react';
 import { Textarea } from '@/components/ui/textarea';
+import { useLessonPlanStore, UrlInput } from '@/stores/lessonPlanStore';
 
 export const Route = createFileRoute('/_authenticated/lesson-plan')({
   component: LessonPlan,
@@ -28,10 +31,18 @@ interface Topic {
   subtopics: string[];
 }
 
-interface UrlInput {
-  value: string;
-  isValid: boolean;
+interface SavedTopic {
+  id: number;
+  topic: string;
+  mdxContent: string;
+  userId?: string;
+  axiosWing?: string;
+  difficulty?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
+
+// UrlInput is now imported from the store
 
 interface MdxResponse {
   status: string;
@@ -48,44 +59,62 @@ interface TopicsResponse {
   };
 }
 
+interface SavedTopicsResponse {
+  topics: SavedTopic[];
+}
+
 // Type guard function to check if the response is a TopicsResponse
-function isTopicsResponse(data: any): data is TopicsResponse {
-  return data &&
+function isTopicsResponse(data: unknown): data is TopicsResponse {
+  return data !== null &&
     typeof data === 'object' &&
     'status' in data &&
     'data' in data &&
-    data.data &&
+    data.data !== null &&
+    typeof data.data === 'object' &&
     'topics' in data.data;
 }
 
 // Type guard function to check if the response is an MdxResponse
-function isMdxResponse(data: any): data is MdxResponse {
-  return data &&
+function isMdxResponse(data: unknown): data is MdxResponse {
+  return data !== null &&
     typeof data === 'object' &&
     'status' in data &&
     'data' in data &&
-    data.data &&
+    data.data !== null &&
+    typeof data.data === 'object' &&
     'mdx_content' in data.data;
 }
 
+// We're using Zustand for state persistence now
+
 function LessonPlan() {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
-  const [selectedSubtopic, setSelectedSubtopic] = useState<string | null>(null);
-  const [mainTopic, setMainTopic] = useState<string | null>(null); // Track the main topic separately
-  const [showRightSidebar, setShowRightSidebar] = useState(false);
-  const [urlInputs, setUrlInputs] = useState<UrlInput[]>([{ value: '', isValid: false }]);
-  const [mdxContent, setMdxContent] = useState<string>('');
+  // Get state and actions from Zustand store
+  const {
+    searchQuery, setSearchQuery,
+    selectedTopic, setSelectedTopic,
+    selectedSubtopic, setSelectedSubtopic,
+    mainTopic, setMainTopic,
+    showRightSidebar, setShowRightSidebar,
+    urlInputs, setUrlInputs,
+    mdxContent, setMdxContent,
+    showEditor, setShowEditor,
+    generationMethod, setGenerationMethod,
+    lastUsedGenerationMethod, setLastUsedGenerationMethod,
+    showGenerationOptions, setShowGenerationOptions,
+    editorViewMode, setEditorViewMode,
+    isLeftSidebarCollapsed, setIsLeftSidebarCollapsed,
+    isRightSidebarCollapsed, setIsRightSidebarCollapsed
+  } = useLessonPlanStore();
+
+  // Local state for UI that doesn't need to persist
   const [isGeneratingMdx, setIsGeneratingMdx] = useState(false);
   const [isEditorFullscreen, setIsEditorFullscreen] = useState(false);
   const [isPreviewFullscreen, setIsPreviewFullscreen] = useState(false);
-  const [showEditor, setShowEditor] = useState(false);
-  const [generationMethod, setGenerationMethod] = useState<'crawl' | 'urls' | 'llm'>('crawl');
   const [generationError, setGenerationError] = useState<string | null>(null);
   const [isMobileView, setIsMobileView] = useState(false);
-  const [editorViewMode, setEditorViewMode] = useState<'code' | 'preview' | 'split'>('code');
-  const [isLeftSidebarCollapsed, setIsLeftSidebarCollapsed] = useState(false);
-  const [isRightSidebarCollapsed, setIsRightSidebarCollapsed] = useState(false);
+  const [isSavingMdx, setIsSavingMdx] = useState(false);
+  const [savedTopics, setSavedTopics] = useState<{id: number, topic: string, mdxContent: string}[]>([]);
+  const [hasSavedContent, setHasSavedContent] = useState(false);
 
   // Content refinement states
   const [refinementMethod, setRefinementMethod] = useState<'selection' | 'crawling' | 'urls'>('selection');
@@ -133,6 +162,17 @@ function LessonPlan() {
     enabled: !!(selectedTopic || selectedSubtopic) && !showRightSidebar && !showEditor,
   });
 
+  // Query for fetching saved topics
+  const {
+    data: savedTopicsData,
+    isLoading: isLoadingSavedTopics,
+    refetch: refetchSavedTopics,
+  } = useQuery({
+    queryKey: ['saved-topics'],
+    queryFn: () => getSavedTopics(),
+    enabled: true, // Fetch on component mount
+  });
+
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     if (searchQuery.trim()) {
@@ -144,26 +184,106 @@ function LessonPlan() {
     }
   };
 
+  // Function to check if there's saved content for a topic
+  const checkForSavedContent = useCallback((topicName: string) => {
+    if (savedTopicsData?.topics && Array.isArray(savedTopicsData.topics)) {
+      const savedTopic = savedTopicsData.topics.find(
+        (topic: SavedTopic) => topic.topic === topicName
+      );
+
+      if (savedTopic) {
+        setHasSavedContent(true);
+        // If there's saved content, use it
+        setMdxContent(savedTopic.mdxContent);
+        setShowEditor(true);
+        return true;
+      }
+    }
+
+    setHasSavedContent(false);
+    return false;
+  }, [savedTopicsData, setHasSavedContent, setMdxContent, setShowEditor]);
+
+  // Function to save MDX content
+  const handleSaveMdx = async () => {
+    if (!mdxContent.trim()) {
+      toast.error('Cannot save empty content');
+      return;
+    }
+
+    const selectedTopicValue = selectedTopic || selectedSubtopic || '';
+    const mainTopicValue = mainTopic || '';
+
+    if (!selectedTopicValue || !mainTopicValue) {
+      toast.error('Topic information is missing');
+      return;
+    }
+
+    setIsSavingMdx(true);
+
+    try {
+      console.log('Attempting to save MDX content for topic:', selectedTopicValue);
+      const result = await saveMdxContent(selectedTopicValue, mainTopicValue, mdxContent);
+      console.log('Save result:', result);
+      toast.success('MDX content saved successfully');
+      refetchSavedTopics();
+      setHasSavedContent(true);
+    } catch (error) {
+      console.error('Error saving MDX content:', error);
+      // Show a more detailed error message
+      if (error instanceof Error) {
+        toast.error(`Failed to save MDX content: ${error.message}`);
+      } else {
+        toast.error('Failed to save MDX content');
+      }
+    } finally {
+      setIsSavingMdx(false);
+    }
+  };
+
   const handleTopicSelect = (topic: string) => {
     setSelectedTopic(topic);
     setSelectedSubtopic(null);
     // Keep the search query as the main topic instead of setting it to the selected topic
     // setMainTopic(topic);
     setShowRightSidebar(true);
-    setShowEditor(false);
-    setMdxContent('');
+
+    // Check if there's saved content for this topic
+    const hasSaved = checkForSavedContent(topic);
+
+    if (!hasSaved) {
+      setShowEditor(false);
+      setMdxContent('');
+    }
+
     setGenerationError(null);
+    setShowGenerationOptions(true);
+    setLastUsedGenerationMethod(null);
+
+    // State is automatically persisted by Zustand
   };
 
-  const handleSubtopicSelect = (subtopic: string, _parentTopic: string) => {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const handleSubtopicSelect = (subtopic: string, parentTopic: string) => {
     setSelectedSubtopic(subtopic);
     setSelectedTopic(null);
     // Keep the search query as the main topic instead of setting it to the parent topic
-    // setMainTopic(_parentTopic);
+    // We're not using parentTopic here, but keeping the parameter for future use
     setShowRightSidebar(true);
-    setShowEditor(false);
-    setMdxContent('');
+
+    // Check if there's saved content for this subtopic
+    const hasSaved = checkForSavedContent(subtopic);
+
+    if (!hasSaved) {
+      setShowEditor(false);
+      setMdxContent('');
+    }
+
     setGenerationError(null);
+    setShowGenerationOptions(true);
+    setLastUsedGenerationMethod(null);
+
+    // State is automatically persisted by Zustand
   };
 
   const handleUrlChange = (index: number, value: string) => {
@@ -211,6 +331,12 @@ function LessonPlan() {
       setShowEditor(true);
       // Keep the right sidebar visible
       setShowRightSidebar(true);
+      // Store the generation method used
+      setLastUsedGenerationMethod('crawl');
+      // Keep showing generation options
+      setShowGenerationOptions(true);
+
+      // State is automatically persisted by Zustand
     } catch (error) {
       console.error('Error generating MDX from crawling:', error);
       setGenerationError('Failed to generate MDX content from crawling. Please try again.');
@@ -244,6 +370,12 @@ function LessonPlan() {
       setShowEditor(true);
       // Keep the right sidebar visible
       setShowRightSidebar(true);
+      // Store the generation method used
+      setLastUsedGenerationMethod('urls');
+      // Keep showing generation options
+      setShowGenerationOptions(true);
+
+      // State is automatically persisted by Zustand
     } catch (error) {
       console.error('Error generating MDX from URLs:', error);
       setGenerationError('Failed to generate MDX content from URLs. Please try again.');
@@ -270,6 +402,12 @@ function LessonPlan() {
       setShowEditor(true);
       // Keep the right sidebar visible
       setShowRightSidebar(true);
+      // Store the generation method used
+      setLastUsedGenerationMethod('llm');
+      // Keep showing generation options
+      setShowGenerationOptions(true);
+
+      // State is automatically persisted by Zustand
     } catch (error) {
       console.error('Error generating MDX using LLM only:', error);
       setGenerationError('Failed to generate MDX content using LLM only. Please try again.');
@@ -277,6 +415,8 @@ function LessonPlan() {
       setIsGeneratingMdx(false);
     }
   };
+
+  // No need for localStorage functions since we're using Zustand with persist middleware
 
   // Check for mobile view and handle resize
   useEffect(() => {
@@ -294,10 +434,41 @@ function LessonPlan() {
     return () => window.removeEventListener('resize', checkMobileView);
   }, []);
 
+  // Update saved topics when data changes
+  useEffect(() => {
+    if (savedTopicsData?.topics && Array.isArray(savedTopicsData.topics)) {
+      // Update the saved topics state
+      setSavedTopics(savedTopicsData.topics.map((topic: SavedTopic) => ({
+        id: topic.id,
+        topic: topic.topic,
+        mdxContent: topic.mdxContent
+      })));
+
+      // If a topic is selected, check if it has saved content
+      if (selectedTopic) {
+        checkForSavedContent(selectedTopic);
+      } else if (selectedSubtopic) {
+        checkForSavedContent(selectedSubtopic);
+      }
+    }
+  }, [savedTopicsData, selectedTopic, selectedSubtopic, checkForSavedContent]);
+
   // Handle content changes
   const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newContent = e.target.value;
     setMdxContent(newContent);
+
+    // If the content has been saved and is now being edited, update the state
+    if (hasSavedContent) {
+      // Check if the saved content matches the current content
+      const currentTopic = selectedTopic || selectedSubtopic || '';
+      const savedTopic = savedTopics.find(topic => topic.topic === currentTopic);
+
+      if (savedTopic && savedTopic.mdxContent !== newContent) {
+        // Content has been modified from the saved version
+        setHasSavedContent(false);
+      }
+    }
 
     // If the user manually edits the content, reset the refinement state
     if (isTextRefined) {
@@ -307,6 +478,8 @@ function LessonPlan() {
       setSelectionStart(null);
       setSelectionEnd(null);
     }
+
+    // State is automatically persisted by Zustand
   };
 
   // Handle text selection in the editor
@@ -854,7 +1027,7 @@ function LessonPlan() {
               <div className="flex flex-col h-[calc(100%-40px)]">
                 <CardHeader className="py-3 pb-1">
                   <CardTitle className="text-lg font-semibold flex items-center">
-                    <span className="mr-2">{showEditor ? 'Content Refinement' : 'Generation Mode'}</span>
+                    <span className="mr-2">{showGenerationOptions ? 'Generation Mode' : 'Content Refinement'}</span>
                     {selectedTopic || selectedSubtopic ? (
                       <span className="text-xs bg-secondary/50 text-secondary-foreground px-2 py-0.5 rounded-full">
                         {(selectedTopic || selectedSubtopic || '').length > 15
@@ -864,13 +1037,13 @@ function LessonPlan() {
                     ) : null}
                   </CardTitle>
                   <CardDescription className="text-muted-foreground">
-                    {showEditor
-                      ? 'Refine your content with AI assistance'
-                      : 'Choose a mdx generation method below'}
+                    {showGenerationOptions
+                      ? 'Choose a mdx generation method below'
+                      : 'Refine your content with AI assistance'}
                   </CardDescription>
                 </CardHeader>
 
-                {!showEditor ? (
+                {showGenerationOptions ? (
                   <>
                     <div className="px-4 py-2">
                       <div className="flex gap-1 bg-muted/50 p-1 rounded-lg">
@@ -927,7 +1100,7 @@ function LessonPlan() {
                                   Generating...
                                 </>
                               ) : (
-                                'Generate MDX'
+                                mdxContent ? 'Regenerate MDX' : 'Generate MDX'
                               )}
                             </Button>
                           </div>
@@ -987,7 +1160,7 @@ function LessonPlan() {
                                   Generating...
                                 </>
                               ) : (
-                                'Generate MDX from URLs'
+                                mdxContent ? 'Regenerate MDX from URLs' : 'Generate MDX from URLs'
                               )}
                             </Button>
                           </div>
@@ -1014,7 +1187,7 @@ function LessonPlan() {
                                   Generating...
                                 </>
                               ) : (
-                                'Generate MDX using LLM Only'
+                                mdxContent ? 'Regenerate MDX using LLM Only' : 'Generate MDX using LLM Only'
                               )}
                             </Button>
                           </div>
@@ -1023,6 +1196,36 @@ function LessonPlan() {
                         {generationError && (
                           <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-lg mt-4">
                             {generationError}
+                          </div>
+                        )}
+
+
+
+                        {showEditor && (
+                          <div className="mt-4 pt-4 border-t border-border space-y-2">
+                            <Button
+                              onClick={handleSaveMdx}
+                              disabled={isSavingMdx || !mdxContent.trim()}
+                              className="w-full"
+                              variant="default"
+                            >
+                              {isSavingMdx ? (
+                                <>
+                                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                  Saving...
+                                </>
+                              ) : (
+                                hasSavedContent ? 'Update Saved MDX' : 'Save MDX'
+                              )}
+                            </Button>
+
+                            <Button
+                              onClick={() => setShowGenerationOptions(false)}
+                              variant="secondary"
+                              className="w-full"
+                            >
+                              Switch to Refinement Mode
+                            </Button>
                           </div>
                         )}
                       </div>
@@ -1176,6 +1379,34 @@ function LessonPlan() {
                             {refinementError}
                           </div>
                         )}
+
+                        {showEditor && lastUsedGenerationMethod && (
+                          <div className="mt-4 pt-4 border-t border-border space-y-2">
+                            <Button
+                              onClick={handleSaveMdx}
+                              disabled={isSavingMdx || !mdxContent.trim()}
+                              className="w-full"
+                              variant="default"
+                            >
+                              {isSavingMdx ? (
+                                <>
+                                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                  Saving...
+                                </>
+                              ) : (
+                                hasSavedContent ? 'Update Saved MDX' : 'Save MDX'
+                              )}
+                            </Button>
+
+                            <Button
+                              onClick={() => setShowGenerationOptions(true)}
+                              variant="secondary"
+                              className="w-full"
+                            >
+                              Switch to Generation Mode
+                            </Button>
+                          </div>
+                        )}
                       </div>
                     </CardContent>
                   </>
@@ -1184,8 +1415,8 @@ function LessonPlan() {
             ) : (
               <div className="flex flex-col items-center justify-start h-[calc(100%-40px)] pt-4">
                 <div className="bg-primary/10 text-primary rounded-full p-1.5 mb-4">
-                  <span className="sr-only">{showEditor ? 'Content Refinement' : 'MDX Generation'}</span>
-                  {showEditor ? (
+                  <span className="sr-only">{showGenerationOptions ? 'MDX Generation' : 'Content Refinement'}</span>
+                  {!showGenerationOptions ? (
                     refinementMethod === 'selection' ? (
                       <span className="h-4 w-4 flex items-center justify-center text-xs font-bold">AI</span>
                     ) : refinementMethod === 'crawling' ? (
@@ -1204,7 +1435,7 @@ function LessonPlan() {
                   )}
                 </div>
                 <div className="text-xs text-center px-1 font-medium rotate-90 whitespace-nowrap mt-4">
-                  {showEditor ? (
+                  {!showGenerationOptions ? (
                     refinementMethod === 'selection'
                       ? 'Selection Mode'
                       : refinementMethod === 'crawling'
