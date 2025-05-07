@@ -7,6 +7,24 @@ export interface UrlInput {
   isValid: boolean;
 }
 
+// Define the interface for a saved topic in a lesson plan
+export interface SavedLessonTopic {
+  topic: string;
+  mdxContent: string;
+  isSubtopic: boolean;
+  parentTopic?: string;
+}
+
+// Define the interface for a complete lesson plan
+export interface LessonPlan {
+  id?: number;
+  name: string;
+  mainTopic: string;
+  topics: SavedLessonTopic[];
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 // Define the interface for the lesson plan state
 export interface LessonPlanState {
   searchQuery: string;
@@ -23,7 +41,10 @@ export interface LessonPlanState {
   isLeftSidebarCollapsed: boolean;
   isRightSidebarCollapsed: boolean;
   urlInputs: UrlInput[];
-  
+  currentLessonPlan: LessonPlan | null;
+  savedTopicsMap: Record<string, string>; // Map of topic name to MDX content
+  hasUnsavedChanges: boolean;
+
   // Actions
   setSearchQuery: (query: string) => void;
   setSelectedTopic: (topic: string | null) => void;
@@ -39,7 +60,10 @@ export interface LessonPlanState {
   setIsLeftSidebarCollapsed: (collapsed: boolean) => void;
   setIsRightSidebarCollapsed: (collapsed: boolean) => void;
   setUrlInputs: (inputs: UrlInput[]) => void;
-  
+  setCurrentLessonPlan: (lessonPlan: LessonPlan | null) => void;
+  saveMdxToCurrentLesson: (topic: string, mdxContent: string, isSubtopic: boolean, parentTopic?: string) => void;
+  setHasUnsavedChanges: (hasChanges: boolean) => void;
+
   // Reset state
   resetState: () => void;
 }
@@ -47,7 +71,7 @@ export interface LessonPlanState {
 // Create the store with persistence
 export const useLessonPlanStore = create<LessonPlanState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       // Initial state
       searchQuery: '',
       selectedTopic: null,
@@ -63,14 +87,22 @@ export const useLessonPlanStore = create<LessonPlanState>()(
       isLeftSidebarCollapsed: false,
       isRightSidebarCollapsed: false,
       urlInputs: [{ value: '', isValid: false }],
-      
+      currentLessonPlan: null,
+      savedTopicsMap: {},
+      hasUnsavedChanges: false,
+
       // Actions
       setSearchQuery: (query) => set({ searchQuery: query }),
       setSelectedTopic: (topic) => set({ selectedTopic: topic }),
       setSelectedSubtopic: (subtopic) => set({ selectedSubtopic: subtopic }),
       setMainTopic: (topic) => set({ mainTopic: topic }),
       setShowRightSidebar: (show) => set({ showRightSidebar: show }),
-      setMdxContent: (content) => set({ mdxContent: content }),
+      setMdxContent: (content) => {
+        set((state) => ({
+          mdxContent: content,
+          hasUnsavedChanges: state.currentLessonPlan !== null
+        }));
+      },
       setShowEditor: (show) => set({ showEditor: show }),
       setGenerationMethod: (method) => set({ generationMethod: method }),
       setLastUsedGenerationMethod: (method) => set({ lastUsedGenerationMethod: method }),
@@ -79,7 +111,73 @@ export const useLessonPlanStore = create<LessonPlanState>()(
       setIsLeftSidebarCollapsed: (collapsed) => set({ isLeftSidebarCollapsed: collapsed }),
       setIsRightSidebarCollapsed: (collapsed) => set({ isRightSidebarCollapsed: collapsed }),
       setUrlInputs: (inputs) => set({ urlInputs: inputs }),
-      
+      setCurrentLessonPlan: (lessonPlan) => set({
+        currentLessonPlan: lessonPlan,
+        hasUnsavedChanges: false,
+        savedTopicsMap: lessonPlan ? lessonPlan.topics.reduce((acc, topic) => {
+          acc[topic.topic] = topic.mdxContent;
+          return acc;
+        }, {} as Record<string, string>) : {}
+      }),
+      saveMdxToCurrentLesson: (topic, mdxContent, isSubtopic, parentTopic) => {
+        set((state) => {
+          if (!state.currentLessonPlan) {
+            // If no current lesson plan, create a new one
+            return {
+              currentLessonPlan: {
+                name: state.mainTopic || 'New Lesson Plan',
+                mainTopic: state.mainTopic || '',
+                topics: [{
+                  topic,
+                  mdxContent,
+                  isSubtopic,
+                  parentTopic
+                }]
+              },
+              savedTopicsMap: { [topic]: mdxContent },
+              hasUnsavedChanges: true
+            };
+          }
+
+          // Update existing lesson plan
+          const existingTopicIndex = state.currentLessonPlan.topics.findIndex(t => t.topic === topic);
+          let updatedTopics;
+
+          if (existingTopicIndex >= 0) {
+            // Update existing topic
+            updatedTopics = [...state.currentLessonPlan.topics];
+            updatedTopics[existingTopicIndex] = {
+              ...updatedTopics[existingTopicIndex],
+              mdxContent
+            };
+          } else {
+            // Add new topic
+            updatedTopics = [
+              ...state.currentLessonPlan.topics,
+              {
+                topic,
+                mdxContent,
+                isSubtopic,
+                parentTopic
+              }
+            ];
+          }
+
+          return {
+            currentLessonPlan: {
+              ...state.currentLessonPlan,
+              topics: updatedTopics
+            },
+            savedTopicsMap: {
+              ...state.savedTopicsMap,
+              [topic]: mdxContent
+            },
+            hasUnsavedChanges: true
+          };
+        });
+      },
+      setHasUnsavedChanges: (hasChanges) => set({ hasUnsavedChanges }),
+
       // Reset state
       resetState: () => set({
         searchQuery: '',
@@ -96,6 +194,9 @@ export const useLessonPlanStore = create<LessonPlanState>()(
         isLeftSidebarCollapsed: false,
         isRightSidebarCollapsed: false,
         urlInputs: [{ value: '', isValid: false }],
+        currentLessonPlan: null,
+        savedTopicsMap: {},
+        hasUnsavedChanges: false,
       }),
     }),
     {

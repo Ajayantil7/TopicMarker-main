@@ -54,6 +54,9 @@ function NavBar() {
       {/* Only show authenticated routes when logged in */}
       {isAuthenticated && (
         <>
+          <Link to="/dashboard" className="[&.active]:font-bold text-base hover:text-primary transition-colors">
+            Dashboard
+          </Link>
           <Link to="/mdx" className="[&.active]:font-bold text-base hover:text-primary transition-colors">
             MDX Editor
           </Link>

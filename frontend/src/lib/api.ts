@@ -1,6 +1,7 @@
 import { hc } from "hono/client";
 import { type ApiRoutes } from "@server/app";
 import { queryOptions } from "@tanstack/react-query";
+import { LessonPlan } from "@/stores/lessonPlanStore";
 
 const client = hc<ApiRoutes>("/");
 
@@ -434,10 +435,81 @@ export async function refineWithUrlsRaw(
   }
 }
 
+// Lesson Plan API functions
+
+// Save a complete lesson plan
+export async function saveLessonPlan(lessonPlan: LessonPlan) {
+  try {
+    console.log('Saving lesson plan:', {
+      name: lessonPlan.name,
+      mainTopic: lessonPlan.mainTopic,
+      topicsCount: lessonPlan.topics.length
+    });
+
+    const res = await api.lessonPlans.$post({
+      json: lessonPlan
+    });
+
+    if (!res.ok) {
+      const errorText = await res.text().catch(() => 'No error text available');
+      console.error('Server error response when saving lesson plan:', errorText);
+      throw new Error(`Failed to save lesson plan: ${res.status} ${res.statusText}`);
+    }
+
+    const data = await res.json();
+    console.log('Lesson plan saved successfully:', data);
+    return data;
+  } catch (error) {
+    console.error('Error in saveLessonPlan:', error);
+    throw error;
+  }
+}
+
+// Get all lesson plans for the current user
+export async function getLessonPlans() {
+  try {
+    const res = await api.lessonPlans.$get();
+
+    if (!res.ok) {
+      throw new Error("Failed to get lesson plans");
+    }
+
+    const data = await res.json();
+    return data;
+  } catch (error) {
+    console.error('Error in getLessonPlans:', error);
+    throw error;
+  }
+}
+
+// Get a specific lesson plan by ID
+export async function getLessonPlanById(id: number) {
+  try {
+    const res = await api.lessonPlans[":id"].$get({ param: { id: String(id) } });
+
+    if (!res.ok) {
+      throw new Error(`Failed to get lesson plan with ID ${id}`);
+    }
+
+    const data = await res.json();
+    return data;
+  } catch (error) {
+    console.error(`Error in getLessonPlanById(${id}):`, error);
+    throw error;
+  }
+}
+
 // React Query options
 export const searchTopicsQueryOptions = queryOptions({
   queryKey: ["search-topics", "", undefined] as [string, string, number | undefined],
   queryFn: ({ queryKey }) => searchTopics(queryKey[1], queryKey[2]),
   enabled: false, // Only run when explicitly called
+});
+
+// Lesson plan query options
+export const lessonPlansQueryOptions = queryOptions({
+  queryKey: ["lesson-plans"],
+  queryFn: getLessonPlans,
+  staleTime: 1000 * 60 * 5, // 5 minutes
 });
 

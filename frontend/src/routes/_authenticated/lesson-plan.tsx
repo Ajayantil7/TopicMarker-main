@@ -11,16 +11,24 @@ import {
   refineWithSelectionRaw,
   refineWithCrawlingRaw,
   refineWithUrlsRaw,
-  saveMdxContent,
-  getSavedTopics
+  getSavedTopics,
+  saveLessonPlan
 } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { MDXRenderer } from '@/components/mdxRenderer';
-import { Loader2, Search, X, Maximize2, Minimize2, ChevronLeft, ChevronRight, Link } from 'lucide-react';
+import { Loader2, Search, X, Maximize2, Minimize2, ChevronLeft, ChevronRight, Link, Save, FilePlus } from 'lucide-react';
 import { Textarea } from '@/components/ui/textarea';
-import { useLessonPlanStore, UrlInput } from '@/stores/lessonPlanStore';
+import { useLessonPlanStore, UrlInput, SavedLessonTopic } from '@/stores/lessonPlanStore';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 export const Route = createFileRoute('/_authenticated/lesson-plan')({
   component: LessonPlan,
@@ -59,6 +67,7 @@ interface TopicsResponse {
   };
 }
 
+// Interface for the response from the API
 interface SavedTopicsResponse {
   topics: SavedTopic[];
 }
@@ -103,7 +112,9 @@ function LessonPlan() {
     showGenerationOptions, setShowGenerationOptions,
     editorViewMode, setEditorViewMode,
     isLeftSidebarCollapsed, setIsLeftSidebarCollapsed,
-    isRightSidebarCollapsed, setIsRightSidebarCollapsed
+    isRightSidebarCollapsed, setIsRightSidebarCollapsed,
+    currentLessonPlan, setCurrentLessonPlan,
+    saveMdxToCurrentLesson
   } = useLessonPlanStore();
 
   // Local state for UI that doesn't need to persist
@@ -116,12 +127,17 @@ function LessonPlan() {
   const [savedTopics, setSavedTopics] = useState<{id: number, topic: string, mdxContent: string}[]>([]);
   const [hasSavedContent, setHasSavedContent] = useState(false);
 
+  // Lesson plan management state
+  const [isSavingLessonPlan, setIsSavingLessonPlan] = useState(false);
+  const [showSaveConfirmDialog, setShowSaveConfirmDialog] = useState(false);
+
   // Content refinement states
   const [refinementMethod, setRefinementMethod] = useState<'selection' | 'crawling' | 'urls'>('selection');
   const [refinementQuestion, setRefinementQuestion] = useState('');
   const [selectedEditorText, setSelectedEditorText] = useState('');
   const [originalSelectedText, setOriginalSelectedText] = useState('');
-  const [refinedText, setRefinedText] = useState('');
+  // We need setRefinedText for the refinement functionality
+  const [, setRefinedText] = useState('');
   const [selectionStart, setSelectionStart] = useState<number | null>(null);
   const [selectionEnd, setSelectionEnd] = useState<number | null>(null);
   const [isTextRefined, setIsTextRefined] = useState(false);
@@ -165,8 +181,6 @@ function LessonPlan() {
   // Query for fetching saved topics
   const {
     data: savedTopicsData,
-    isLoading: isLoadingSavedTopics,
-    refetch: refetchSavedTopics,
   } = useQuery({
     queryKey: ['saved-topics'],
     queryFn: () => getSavedTopics(),
@@ -186,12 +200,13 @@ function LessonPlan() {
 
   // Function to check if there's saved content for a topic
   const checkForSavedContent = useCallback((topicName: string) => {
-    if (savedTopicsData?.topics && Array.isArray(savedTopicsData.topics)) {
-      const savedTopic = savedTopicsData.topics.find(
-        (topic: SavedTopic) => topic.topic === topicName
+    // First check in the current lesson plan in the store
+    if (currentLessonPlan?.topics) {
+      const savedTopic = currentLessonPlan.topics.find(
+        (topic) => topic.topic === topicName
       );
 
-      if (savedTopic) {
+      if (savedTopic && savedTopic.mdxContent) {
         setHasSavedContent(true);
         // If there's saved content, use it
         setMdxContent(savedTopic.mdxContent);
@@ -200,12 +215,38 @@ function LessonPlan() {
       }
     }
 
+    // If not found in the current lesson plan, check in the database
+    if (savedTopicsData?.topics && Array.isArray(savedTopicsData.topics)) {
+      const savedTopic = savedTopicsData.topics.find(
+        (topic) => topic.topic === topicName
+      );
+
+      if (savedTopic) {
+        setHasSavedContent(true);
+        // If there's saved content, use it
+        setMdxContent(savedTopic.mdxContent);
+        setShowEditor(true);
+
+        // Also save to the current lesson plan in the store
+        if (savedTopic.mdxContent) {
+          saveMdxToCurrentLesson(
+            topicName,
+            savedTopic.mdxContent,
+            !!selectedSubtopic,
+            selectedSubtopic ? (mainTopic || undefined) : undefined
+          );
+        }
+
+        return true;
+      }
+    }
+
     setHasSavedContent(false);
     return false;
-  }, [savedTopicsData, setHasSavedContent, setMdxContent, setShowEditor]);
+  }, [currentLessonPlan, savedTopicsData, setHasSavedContent, setMdxContent, setShowEditor, saveMdxToCurrentLesson, selectedSubtopic, mainTopic]);
 
-  // Function to save MDX content
-  const handleSaveMdx = async () => {
+  // Function to save MDX content (only to the frontend state, not to the database)
+  const handleSaveMdx = () => {
     if (!mdxContent.trim()) {
       toast.error('Cannot save empty content');
       return;
@@ -222,20 +263,20 @@ function LessonPlan() {
     setIsSavingMdx(true);
 
     try {
-      console.log('Attempting to save MDX content for topic:', selectedTopicValue);
-      const result = await saveMdxContent(selectedTopicValue, mainTopicValue, mdxContent);
-      console.log('Save result:', result);
-      toast.success('MDX content saved successfully');
-      refetchSavedTopics();
+      // Save to the current lesson plan in the store only
+      saveMdxToCurrentLesson(
+        selectedTopicValue,
+        mdxContent,
+        !!selectedSubtopic,
+        selectedSubtopic ? mainTopicValue : undefined
+      );
+
+      // Mark as saved in the UI
       setHasSavedContent(true);
+      toast.success('MDX content saved to lesson plan');
     } catch (error) {
-      console.error('Error saving MDX content:', error);
-      // Show a more detailed error message
-      if (error instanceof Error) {
-        toast.error(`Failed to save MDX content: ${error.message}`);
-      } else {
-        toast.error('Failed to save MDX content');
-      }
+      console.error('Error saving MDX content to state:', error);
+      toast.error('Failed to save MDX content to lesson plan');
     } finally {
       setIsSavingMdx(false);
     }
@@ -248,7 +289,7 @@ function LessonPlan() {
     // setMainTopic(topic);
     setShowRightSidebar(true);
 
-    // Check if there's saved content for this topic
+    // Check if there's saved content for this topic in the current lesson plan or database
     const hasSaved = checkForSavedContent(topic);
 
     if (!hasSaved) {
@@ -271,7 +312,7 @@ function LessonPlan() {
     // We're not using parentTopic here, but keeping the parameter for future use
     setShowRightSidebar(true);
 
-    // Check if there's saved content for this subtopic
+    // Check if there's saved content for this subtopic in the current lesson plan or database
     const hasSaved = checkForSavedContent(subtopic);
 
     if (!hasSaved) {
@@ -438,7 +479,7 @@ function LessonPlan() {
   useEffect(() => {
     if (savedTopicsData?.topics && Array.isArray(savedTopicsData.topics)) {
       // Update the saved topics state
-      setSavedTopics(savedTopicsData.topics.map((topic: SavedTopic) => ({
+      setSavedTopics(savedTopicsData.topics.map((topic) => ({
         id: topic.id,
         topic: topic.topic,
         mdxContent: topic.mdxContent
@@ -853,6 +894,142 @@ function LessonPlan() {
     setIsRightSidebarCollapsed(!isRightSidebarCollapsed);
   };
 
+  // Handle saving the current lesson plan to the database
+  const handleSaveLessonPlan = async () => {
+    if (!mainTopic) {
+      toast.error('Please search for a topic first');
+      return;
+    }
+
+    setIsSavingLessonPlan(true);
+
+    try {
+      // Collect all topics with their MDX content
+      const topicsToSave: SavedLessonTopic[] = [];
+
+      // Add the current topic if it has content
+      if (mdxContent && (selectedTopic || selectedSubtopic)) {
+        const currentTopic = selectedTopic || selectedSubtopic || '';
+
+        // First save to the current lesson in the store to ensure it's up to date
+        saveMdxToCurrentLesson(
+          currentTopic,
+          mdxContent,
+          !!selectedSubtopic,
+          selectedSubtopic ? mainTopic : undefined
+        );
+
+        // Then add it to the topics to save
+        topicsToSave.push({
+          topic: currentTopic,
+          mdxContent,
+          isSubtopic: !!selectedSubtopic,
+          parentTopic: selectedSubtopic ? mainTopic : undefined
+        });
+      }
+
+      // Get all topics from the current lesson plan in the store
+      if (currentLessonPlan && currentLessonPlan.topics) {
+        currentLessonPlan.topics.forEach(topic => {
+          // Skip if it's the current topic (already added)
+          if (topic.topic === selectedTopic || topic.topic === selectedSubtopic) {
+            return;
+          }
+
+          // Check if this topic is already in the list
+          if (!topicsToSave.some(t => t.topic === topic.topic)) {
+            topicsToSave.push({
+              topic: topic.topic,
+              mdxContent: topic.mdxContent,
+              isSubtopic: topic.isSubtopic,
+              parentTopic: topic.parentTopic
+            });
+          }
+        });
+      }
+
+      if (topicsToSave.length === 0) {
+        toast.error('No content to save');
+        setIsSavingLessonPlan(false);
+        return;
+      }
+
+      // Create or update the lesson plan
+      const lessonPlan = {
+        id: currentLessonPlan?.id,
+        name: currentLessonPlan?.name || mainTopic || 'Untitled Lesson Plan',
+        mainTopic: mainTopic || '',
+        topics: topicsToSave
+      };
+
+      const result = await saveLessonPlan(lessonPlan);
+      console.log('Lesson plan saved to database:', result);
+
+      // Update the current lesson plan in the store
+      // Convert the result to match our LessonPlan type
+      const savedLessonPlan = {
+        id: result.id,
+        name: result.name,
+        mainTopic: result.mainTopic,
+        topics: result.topics,
+        createdAt: result.createdAt || undefined,
+        updatedAt: result.updatedAt || undefined
+      };
+
+      setCurrentLessonPlan(savedLessonPlan);
+
+      toast.success('Lesson plan saved to database successfully');
+    } catch (error) {
+      console.error('Error saving lesson plan to database:', error);
+      toast.error('Failed to save lesson plan to database');
+    } finally {
+      setIsSavingLessonPlan(false);
+    }
+  };
+
+  // Handle creating a new lesson plan
+  const handleCreateNewLesson = () => {
+    // Show confirmation dialog if there's content
+    if (mdxContent.trim() || currentLessonPlan) {
+      setShowSaveConfirmDialog(true);
+    } else {
+      // Reset state for a new lesson
+      resetLessonState();
+    }
+  };
+
+  // Reset the state for a new lesson
+  const resetLessonState = () => {
+    setSelectedTopic(null);
+    setSelectedSubtopic(null);
+    setMainTopic(null);
+    setMdxContent('');
+    setShowEditor(false);
+    setCurrentLessonPlan(null);
+    setSearchQuery('');
+    setHasSavedContent(false);
+
+    // Reset UI state
+    setShowRightSidebar(false);
+    setLastUsedGenerationMethod(null);
+    setShowGenerationOptions(true);
+
+    toast.success('Started a new lesson plan');
+  };
+
+  // Handle confirmation to save before creating a new lesson
+  const handleSaveBeforeNew = async () => {
+    await handleSaveLessonPlan();
+    resetLessonState();
+    setShowSaveConfirmDialog(false);
+  };
+
+  // Handle discarding changes and creating a new lesson
+  const handleDiscardAndCreateNew = () => {
+    resetLessonState();
+    setShowSaveConfirmDialog(false);
+  };
+
   // Determine panel widths based on fullscreen states and view mode
   const getEditorWidth = () => {
     if (isMobileView) return 'w-full';
@@ -877,8 +1054,71 @@ function LessonPlan() {
   };
 
   return (
-    <div className={`flex flex-col md:flex-row gap-4 w-full ${isEditorFullscreen || isPreviewFullscreen ? 'h-screen overflow-hidden' : ''}`}>
-      {/* Left sidebar for topic hierarchy */}
+    <div className={`flex flex-col gap-4 w-full ${isEditorFullscreen || isPreviewFullscreen ? 'h-screen overflow-hidden' : ''}`}>
+      {/* Top buttons for lesson plan management */}
+      <div className="flex justify-between items-center px-2 py-2 bg-card rounded-lg shadow-sm border">
+        <div className="flex items-center">
+          <h2 className="text-lg font-semibold mr-4">Lesson Plan</h2>
+          {currentLessonPlan && (
+            <span className="text-sm bg-primary/10 text-primary px-2 py-0.5 rounded-full">
+              {currentLessonPlan.name}
+            </span>
+          )}
+        </div>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleCreateNewLesson}
+            className="flex items-center"
+          >
+            <FilePlus className="h-4 w-4 mr-1" />
+            Create New Lesson
+          </Button>
+          <Button
+            variant="default"
+            size="sm"
+            onClick={handleSaveLessonPlan}
+            disabled={isSavingLessonPlan}
+            className="flex items-center"
+          >
+            {isSavingLessonPlan ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                Saving...
+              </>
+            ) : (
+              <>
+                <Save className="h-4 w-4 mr-1" />
+                Save Lesson
+              </>
+            )}
+          </Button>
+        </div>
+      </div>
+
+      {/* Save confirmation dialog */}
+      <Dialog open={showSaveConfirmDialog} onOpenChange={setShowSaveConfirmDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Save changes?</DialogTitle>
+            <DialogDescription>
+              You have unsaved changes in your current lesson plan. Would you like to save them before creating a new lesson?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex justify-end gap-2 mt-4">
+            <Button variant="outline" onClick={handleDiscardAndCreateNew}>
+              Discard Changes
+            </Button>
+            <Button onClick={handleSaveBeforeNew}>
+              Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <div className="flex md:flex-row gap-4 w-full">
+        {/* Left sidebar for topic hierarchy */}
       <div className={`${isLeftSidebarCollapsed ? 'w-14' : 'w-full md:w-1/5 lg:w-1/6'} ${isEditorFullscreen || isPreviewFullscreen ? 'hidden md:hidden' : ''} transition-all duration-300`}>
         <Card className="h-full overflow-hidden border-border">
           <div className="border-b border-border flex items-center justify-between p-2 bg-muted/30">
@@ -1633,6 +1873,7 @@ function LessonPlan() {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }

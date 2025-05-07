@@ -4,6 +4,7 @@ import { serveStatic } from "hono/bun";
 import { authRoute } from "./routes/auth";
 import { topicsRoute } from "./routes/topics";
 import { ragRoute } from "./routes/rag";
+import { lessonPlansRoute } from "./routes/lessonPlans";
 
 const app = new Hono();
 
@@ -12,6 +13,7 @@ app.use("*", logger());
 const apiRoutes = app.basePath("/api")
   .route("/topics", topicsRoute)
   .route("/rag", ragRoute)  // Add the RAG route
+  .route("/lessonPlans", lessonPlansRoute)  // Add the lesson plans route
   .route("/", authRoute);
 
 
