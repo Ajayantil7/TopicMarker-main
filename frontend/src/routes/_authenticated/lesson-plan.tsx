@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   searchTopics,
   generateSingleTopic,
@@ -9,8 +10,7 @@ import {
   generateMdxLlmOnlyRaw,
   refineWithSelectionRaw,
   refineWithCrawlingRaw,
-  refineWithUrlsRaw,
-  directReplaceSelectedText
+  refineWithUrlsRaw
 } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -83,18 +83,23 @@ function LessonPlan() {
   const [generationMethod, setGenerationMethod] = useState<'crawl' | 'urls' | 'llm'>('crawl');
   const [generationError, setGenerationError] = useState<string | null>(null);
   const [isMobileView, setIsMobileView] = useState(false);
-  const [activeTab, setActiveTab] = useState<'editor' | 'preview'>('editor');
+  const [editorViewMode, setEditorViewMode] = useState<'code' | 'preview' | 'split'>('code');
   const [isLeftSidebarCollapsed, setIsLeftSidebarCollapsed] = useState(false);
   const [isRightSidebarCollapsed, setIsRightSidebarCollapsed] = useState(false);
 
   // Content refinement states
-  const [refinementMethod, setRefinementMethod] = useState<'selection' | 'crawling' | 'urls' | 'direct'>('selection');
+  const [refinementMethod, setRefinementMethod] = useState<'selection' | 'crawling' | 'urls'>('selection');
   const [refinementQuestion, setRefinementQuestion] = useState('');
   const [selectedEditorText, setSelectedEditorText] = useState('');
-  const [replacementText, setReplacementText] = useState('');
+  const [originalSelectedText, setOriginalSelectedText] = useState('');
+  const [refinedText, setRefinedText] = useState('');
+  const [selectionStart, setSelectionStart] = useState<number | null>(null);
+  const [selectionEnd, setSelectionEnd] = useState<number | null>(null);
+  const [isTextRefined, setIsTextRefined] = useState(false);
   const [refinementUrlInputs, setRefinementUrlInputs] = useState<UrlInput[]>([{ value: '', isValid: false }]);
   const [isRefiningMdx, setIsRefiningMdx] = useState(false);
   const [refinementError, setRefinementError] = useState<string | null>(null);
+  const editorRef = useRef<HTMLTextAreaElement>(null);
 
   // Query for searching topics
   const {
@@ -293,6 +298,15 @@ function LessonPlan() {
   const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newContent = e.target.value;
     setMdxContent(newContent);
+
+    // If the user manually edits the content, reset the refinement state
+    if (isTextRefined) {
+      setIsTextRefined(false);
+      setRefinedText('');
+      setOriginalSelectedText('');
+      setSelectionStart(null);
+      setSelectionEnd(null);
+    }
   };
 
   // Handle text selection in the editor
@@ -300,7 +314,16 @@ function LessonPlan() {
     const target = e.target as HTMLTextAreaElement;
     const selectedText = target.value.substring(target.selectionStart, target.selectionEnd);
     if (selectedText) {
+      // Reset any previous refinement state when new text is selected
+      if (isTextRefined) {
+        setIsTextRefined(false);
+        setRefinedText('');
+      }
+
       setSelectedEditorText(selectedText);
+      setOriginalSelectedText(selectedText);
+      setSelectionStart(target.selectionStart);
+      setSelectionEnd(target.selectionEnd);
     }
   };
 
@@ -346,6 +369,11 @@ function LessonPlan() {
       return;
     }
 
+    if (selectionStart === null || selectionEnd === null) {
+      setRefinementError('Invalid text selection');
+      return;
+    }
+
     setIsRefiningMdx(true);
     setRefinementError(null);
 
@@ -360,7 +388,8 @@ function LessonPlan() {
         main_topic: mainTopicValue
       });
 
-      const refinedMdx = await refineWithSelectionRaw(
+      // Get the refined text from the API
+      const response = await refineWithSelectionRaw(
         mdxContent,
         refinementQuestion,
         selectedEditorText,
@@ -368,7 +397,30 @@ function LessonPlan() {
         mainTopicValue
       );
 
-      setMdxContent(refinedMdx);
+      // Extract the refined text (the API returns the full document with the selected text replaced)
+      const refinedText = response.substring(selectionStart, response.length - (mdxContent.length - selectionEnd));
+      setRefinedText(refinedText);
+
+      // Update the content
+      const newContent = mdxContent.substring(0, selectionStart) +
+                         refinedText +
+                         mdxContent.substring(selectionEnd);
+
+      setMdxContent(newContent);
+      setIsTextRefined(true);
+
+      // Update the selection end to account for the new text length
+      setSelectionEnd(selectionStart + refinedText.length);
+
+      // Restore the selection to highlight the refined text
+      if (editorRef.current) {
+        setTimeout(() => {
+          if (editorRef.current) {
+            editorRef.current.focus();
+            editorRef.current.setSelectionRange(selectionStart, selectionStart + refinedText.length);
+          }
+        }, 0);
+      }
     } catch (error) {
       console.error('Error refining content with selection:', error);
       setRefinementError('Failed to refine content. Please try again.');
@@ -377,43 +429,36 @@ function LessonPlan() {
     }
   };
 
-  // Direct replacement of selected text
-  const replaceSelectedText = async () => {
-    if (!selectedEditorText) {
-      setRefinementError('Please select some text in the editor to replace');
+  // Revert refined text to original
+  const revertRefinedText = () => {
+    if (!isTextRefined || !originalSelectedText || selectionStart === null || selectionEnd === null) {
       return;
     }
-
-    if (!replacementText.trim()) {
-      setRefinementError('Please enter the replacement text');
-      return;
-    }
-
-    setIsRefiningMdx(true);
-    setRefinementError(null);
 
     try {
-      const selectedTopicValue = selectedTopic || selectedSubtopic || '';
+      // Replace the refined text with the original text
+      const newContent = mdxContent.substring(0, selectionStart) +
+                         originalSelectedText +
+                         mdxContent.substring(selectionEnd);
 
-      console.log('Replacing selected text:', {
-        selected_text: selectedEditorText,
-        replacement_text: replacementText,
-        topic: selectedTopicValue
-      });
+      setMdxContent(newContent);
+      setIsTextRefined(false);
+      setRefinedText('');
 
-      const updatedMdx = await directReplaceSelectedText(
-        mdxContent,
-        selectedEditorText,
-        replacementText,
-        selectedTopicValue
-      );
+      // Restore the selection
+      if (editorRef.current) {
+        setTimeout(() => {
+          if (editorRef.current) {
+            editorRef.current.focus();
+            editorRef.current.setSelectionRange(selectionStart, selectionStart + originalSelectedText.length);
+          }
+        }, 0);
+      }
 
-      setMdxContent(updatedMdx);
+      toast.success('Changes reverted');
     } catch (error) {
-      console.error('Error replacing selected text:', error);
-      setRefinementError('Failed to replace selected text. Please try again.');
-    } finally {
-      setIsRefiningMdx(false);
+      console.error('Error reverting text:', error);
+      toast.error('Failed to revert changes');
     }
   };
 
@@ -426,6 +471,11 @@ function LessonPlan() {
 
     if (!refinementQuestion.trim()) {
       setRefinementError('Please enter a question or prompt for refinement');
+      return;
+    }
+
+    if (selectionStart === null || selectionEnd === null) {
+      setRefinementError('Invalid text selection');
       return;
     }
 
@@ -443,7 +493,8 @@ function LessonPlan() {
         main_topic: mainTopicValue
       });
 
-      const refinedMdx = await refineWithCrawlingRaw(
+      // Get the refined text from the API
+      const response = await refineWithCrawlingRaw(
         mdxContent,
         refinementQuestion,
         selectedEditorText,
@@ -452,7 +503,38 @@ function LessonPlan() {
         2 // Default number of results
       );
 
-      setMdxContent(refinedMdx);
+      // Extract the refined text (the API returns the full document with the selected text replaced)
+      const refinedText = response.substring(selectionStart, response.length - (mdxContent.length - selectionEnd));
+      setRefinedText(refinedText);
+
+      // Update the content
+      const newContent = mdxContent.substring(0, selectionStart) +
+                         refinedText +
+                         mdxContent.substring(selectionEnd);
+
+      // Force a reflow to ensure the layout updates correctly
+      setTimeout(() => {
+        setMdxContent(newContent);
+        setIsTextRefined(true);
+
+        // Force another reflow to ensure content is properly laid out
+        setTimeout(() => {
+          window.dispatchEvent(new Event('resize'));
+        }, 100);
+      }, 50);
+
+      // Update the selection end to account for the new text length
+      setSelectionEnd(selectionStart + refinedText.length);
+
+      // Restore the selection to highlight the refined text
+      if (editorRef.current) {
+        setTimeout(() => {
+          if (editorRef.current) {
+            editorRef.current.focus();
+            editorRef.current.setSelectionRange(selectionStart, selectionStart + refinedText.length);
+          }
+        }, 0);
+      }
     } catch (error) {
       console.error('Error refining content with crawling:', error);
       setRefinementError('Failed to refine content with crawling. Please try again.');
@@ -478,6 +560,11 @@ function LessonPlan() {
       return;
     }
 
+    if (selectionStart === null || selectionEnd === null) {
+      setRefinementError('Invalid text selection');
+      return;
+    }
+
     setIsRefiningMdx(true);
     setRefinementError(null);
 
@@ -494,7 +581,8 @@ function LessonPlan() {
         urls: validUrls
       });
 
-      const refinedMdx = await refineWithUrlsRaw(
+      // Get the refined text from the API
+      const response = await refineWithUrlsRaw(
         mdxContent,
         refinementQuestion,
         selectedEditorText,
@@ -503,7 +591,38 @@ function LessonPlan() {
         validUrls
       );
 
-      setMdxContent(refinedMdx);
+      // Extract the refined text (the API returns the full document with the selected text replaced)
+      const refinedText = response.substring(selectionStart, response.length - (mdxContent.length - selectionEnd));
+      setRefinedText(refinedText);
+
+      // Update the content
+      const newContent = mdxContent.substring(0, selectionStart) +
+                         refinedText +
+                         mdxContent.substring(selectionEnd);
+
+      // Force a reflow to ensure the layout updates correctly
+      setTimeout(() => {
+        setMdxContent(newContent);
+        setIsTextRefined(true);
+
+        // Force another reflow to ensure content is properly laid out
+        setTimeout(() => {
+          window.dispatchEvent(new Event('resize'));
+        }, 100);
+      }, 50);
+
+      // Update the selection end to account for the new text length
+      setSelectionEnd(selectionStart + refinedText.length);
+
+      // Restore the selection to highlight the refined text
+      if (editorRef.current) {
+        setTimeout(() => {
+          if (editorRef.current) {
+            editorRef.current.focus();
+            editorRef.current.setSelectionRange(selectionStart, selectionStart + refinedText.length);
+          }
+        }, 0);
+      }
     } catch (error) {
       console.error('Error refining content with URLs:', error);
       setRefinementError('Failed to refine content with URLs. Please try again.');
@@ -514,10 +633,15 @@ function LessonPlan() {
 
   // Toggle fullscreen for editor
   const toggleEditorFullscreen = () => {
-    setIsEditorFullscreen(!isEditorFullscreen);
-    if (!isEditorFullscreen) {
+    const newState = !isEditorFullscreen;
+    setIsEditorFullscreen(newState);
+
+    if (newState) {
+      // When entering fullscreen, ensure preview is hidden and set view mode to code
       setIsPreviewFullscreen(false);
+      setEditorViewMode('code');
     }
+
     // Keep the right sidebar visible even in fullscreen mode
     setShowRightSidebar(true);
   };
@@ -526,9 +650,12 @@ function LessonPlan() {
   const togglePreviewFullscreen = () => {
     const newState = !isPreviewFullscreen;
     setIsPreviewFullscreen(newState);
+
     if (newState) {
-      // When entering fullscreen, ensure editor is hidden
+      // When entering fullscreen, ensure editor is hidden and set view mode to preview
       setIsEditorFullscreen(false);
+      setEditorViewMode('preview');
+
       // Force a reflow to ensure the layout updates correctly
       setTimeout(() => {
         window.dispatchEvent(new Event('resize'));
@@ -538,6 +665,7 @@ function LessonPlan() {
         }, 100);
       }, 50);
     }
+
     // Keep the right sidebar visible even in fullscreen mode
     setShowRightSidebar(true);
   };
@@ -552,19 +680,27 @@ function LessonPlan() {
     setIsRightSidebarCollapsed(!isRightSidebarCollapsed);
   };
 
-  // Determine panel widths based on fullscreen states
+  // Determine panel widths based on fullscreen states and view mode
   const getEditorWidth = () => {
     if (isMobileView) return 'w-full';
     if (isEditorFullscreen) return 'w-full';
     if (isPreviewFullscreen) return 'w-0 hidden';
-    return 'w-2/3'; // Increased editor width (67%)
+
+    // Handle different view modes
+    if (editorViewMode === 'code') return 'w-full';
+    if (editorViewMode === 'preview') return 'w-0 hidden';
+    return 'w-1/2'; // Split view (50/50)
   };
 
   const getPreviewWidth = () => {
     if (isMobileView) return 'w-full';
     if (isPreviewFullscreen) return 'w-full';
     if (isEditorFullscreen) return 'w-0 hidden';
-    return 'w-1/3'; // Decreased preview width (33%)
+
+    // Handle different view modes
+    if (editorViewMode === 'code') return 'w-0 hidden';
+    if (editorViewMode === 'preview') return 'w-full';
+    return 'w-1/2'; // Split view (50/50)
   };
 
   return (
@@ -927,47 +1063,21 @@ function LessonPlan() {
                           URLs
                         </Button>
                       </div>
-                      <div className="flex gap-1 bg-muted/50 p-1 rounded-lg mt-1">
-                        <Button
-                          onClick={() => setRefinementMethod('direct')}
-                          variant="ghost"
-                          size="sm"
-                          className={`flex-1 ${refinementMethod === 'direct'
-                            ? 'bg-background shadow-sm'
-                            : 'hover:bg-background/80'}`}
-                        >
-                          Direct Replace
-                        </Button>
-                      </div>
                     </div>
 
                     <CardContent className="overflow-auto flex-1 pt-2">
                       <div className="space-y-4">
-                        {refinementMethod !== 'direct' ? (
-                          <div className="space-y-2">
-                            <label className="text-sm font-medium">
-                              Refinement Question/Prompt:
-                            </label>
-                            <Textarea
-                              placeholder="Ask a question or provide instructions for refining the selected text..."
-                              value={refinementQuestion}
-                              onChange={(e) => setRefinementQuestion(e.target.value)}
-                              className="min-h-[80px] text-sm"
-                            />
-                          </div>
-                        ) : (
-                          <div className="space-y-2">
-                            <label className="text-sm font-medium">
-                              Replacement Text:
-                            </label>
-                            <Textarea
-                              placeholder="Enter the text that will replace the selected text..."
-                              value={replacementText}
-                              onChange={(e) => setReplacementText(e.target.value)}
-                              className="min-h-[80px] text-sm"
-                            />
-                          </div>
-                        )}
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium">
+                            Refinement Question/Prompt:
+                          </label>
+                          <Textarea
+                            placeholder="Ask a question or provide instructions for refining the selected text..."
+                            value={refinementQuestion}
+                            onChange={(e) => setRefinementQuestion(e.target.value)}
+                            className="min-h-[80px] text-sm"
+                          />
+                        </div>
 
                         <div className="bg-muted/30 rounded-lg p-3 text-sm text-muted-foreground">
                           <p>
@@ -975,14 +1085,11 @@ function LessonPlan() {
                               ? 'Refine the selected text using the LLM\'s knowledge.'
                               : refinementMethod === 'crawling'
                                 ? 'Refine the selected text by crawling the web for additional information.'
-                                : refinementMethod === 'urls'
-                                  ? 'Refine the selected text using specific URLs as references.'
-                                  : 'Directly replace the selected text with your own content.'}
+                                : 'Refine the selected text using specific URLs as references.'}
                           </p>
                           <p className="mt-2 text-xs">
-                            {refinementMethod === 'direct'
-                              ? 'Select text in the editor and enter the replacement text above.'
-                              : 'Select text in the editor and enter a question or prompt above.'}
+                            Select text in the editor and enter a question or prompt above.
+                            {isTextRefined && ' The refined text will remain highlighted until you accept or revert the changes.'}
                           </p>
                         </div>
 
@@ -1026,34 +1133,43 @@ function LessonPlan() {
                           </div>
                         )}
 
-                        <Button
-                          onClick={
-                            refinementMethod === 'selection'
-                              ? refineWithSelection
-                              : refinementMethod === 'crawling'
-                                ? refineWithCrawl
-                                : refinementMethod === 'urls'
-                                  ? refineWithUrlsList
-                                  : replaceSelectedText
-                          }
-                          disabled={
-                            isRefiningMdx ||
-                            !selectedEditorText ||
-                            (refinementMethod !== 'direct' && !refinementQuestion.trim()) ||
-                            (refinementMethod === 'direct' && !replacementText.trim()) ||
-                            (refinementMethod === 'urls' && !validateRefinementUrls())
-                          }
-                          className="w-full mt-2"
-                        >
-                          {isRefiningMdx ? (
-                            <>
-                              <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                              {refinementMethod === 'direct' ? 'Replacing...' : 'Refining...'}
-                            </>
-                          ) : (
-                            refinementMethod === 'direct' ? 'Replace Text' : 'Refine Content'
+                        <div className="flex gap-2 mt-2">
+                          <Button
+                            onClick={
+                              refinementMethod === 'selection'
+                                ? refineWithSelection
+                                : refinementMethod === 'crawling'
+                                  ? refineWithCrawl
+                                  : refineWithUrlsList
+                            }
+                            disabled={
+                              isRefiningMdx ||
+                              !selectedEditorText ||
+                              !refinementQuestion.trim() ||
+                              (refinementMethod === 'urls' && !validateRefinementUrls())
+                            }
+                            className="flex-1"
+                          >
+                            {isRefiningMdx ? (
+                              <>
+                                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                Refining...
+                              </>
+                            ) : (
+                              'Refine Content'
+                            )}
+                          </Button>
+
+                          {isTextRefined && (
+                            <Button
+                              onClick={revertRefinedText}
+                              variant="outline"
+                              className="flex-1"
+                            >
+                              Revert Changes
+                            </Button>
                           )}
-                        </Button>
+                        </div>
 
                         {refinementError && (
                           <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-lg mt-4">
@@ -1158,43 +1274,57 @@ function LessonPlan() {
       {/* MDX Editor with Preview */}
       {showEditor && (
         <div className={`${isEditorFullscreen || isPreviewFullscreen ? 'w-full h-full flex-grow' : 'flex-1'}`}>
-          <div className="flex flex-col md:flex-row h-full border rounded-lg bg-card shadow-sm overflow-hidden">
-            {/* Mobile Tab Selector */}
-            {isMobileView && (
-              <div className="flex border-b border-slate-200 dark:border-slate-700">
+          <div className="flex flex-col h-full border rounded-lg bg-card shadow-sm overflow-hidden">
+            {/* View Mode Selector - Hidden in fullscreen */}
+            {!isEditorFullscreen && !isPreviewFullscreen && (
+              <div className="flex w-full border-b border-slate-200 dark:border-slate-700 bg-muted/30">
                 <button
-                  className={`flex-1 py-3 px-4 text-center font-medium ${
-                    activeTab === 'editor'
-                      ? 'bg-slate-100 dark:bg-slate-800 border-b-2 border-primary'
-                      : 'bg-transparent'
+                  className={`flex-1 py-3 px-6 text-center font-medium transition-all duration-200 ${
+                    editorViewMode === 'code'
+                      ? 'bg-background shadow-sm border-b-2 border-primary text-primary'
+                      : 'bg-transparent hover:bg-background/50'
                   }`}
-                  onClick={() => setActiveTab('editor')}
+                  onClick={() => setEditorViewMode('code')}
                 >
-                  Editor
+                  MDX Code
                 </button>
                 <button
-                  className={`flex-1 py-3 px-4 text-center font-medium ${
-                    activeTab === 'preview'
-                      ? 'bg-slate-100 dark:bg-slate-800 border-b-2 border-primary'
-                      : 'bg-transparent'
+                  className={`flex-1 py-3 px-6 text-center font-medium transition-all duration-200 ${
+                    editorViewMode === 'preview'
+                      ? 'bg-background shadow-sm border-b-2 border-primary text-primary'
+                      : 'bg-transparent hover:bg-background/50'
                   }`}
-                  onClick={() => setActiveTab('preview')}
+                  onClick={() => setEditorViewMode('preview')}
                 >
                   Preview
                 </button>
+                <button
+                  className={`flex-1 py-3 px-6 text-center font-medium transition-all duration-200 ${
+                    editorViewMode === 'split'
+                      ? 'bg-background shadow-sm border-b-2 border-primary text-primary'
+                      : 'bg-transparent hover:bg-background/50'
+                  }`}
+                  onClick={() => setEditorViewMode('split')}
+                >
+                  Split
+                </button>
               </div>
             )}
+            <div className="flex flex-row h-full w-full overflow-hidden" style={{ maxWidth: '100%' }}>
 
             {/* Editor Panel */}
             <div
-              className={`${getEditorWidth()} h-full border-r border-slate-200 dark:border-slate-700 transition-all duration-300 ${
-                (isMobileView && activeTab !== 'editor') || isPreviewFullscreen ? 'hidden' : ''
+              className={`${getEditorWidth()} h-full border-r border-slate-200 dark:border-slate-700 transition-all duration-300 overflow-hidden ${
+                editorViewMode === 'preview' || isPreviewFullscreen ? 'hidden' : ''
               }`}
+              style={{ maxWidth: editorViewMode === 'split' ? '50%' : '100%' }}
             >
               <div className="p-3 h-14 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
-                <h2 className="text-lg font-semibold">
-                  MDX Editor: {selectedTopic || selectedSubtopic}
-                </h2>
+                <div className="flex items-center">
+                  <h2 className="text-lg font-semibold">
+                    MDX Editor: {selectedTopic || selectedSubtopic}
+                  </h2>
+                </div>
                 <div className="flex items-center gap-2">
                   <Button
                     variant="ghost"
@@ -1208,26 +1338,38 @@ function LessonPlan() {
                 </div>
               </div>
               <Textarea
-                className="w-full h-[calc(100%-3.5rem)] p-4 border-none rounded-none resize-none font-mono focus:ring-0 focus:outline-none text-base"
+                ref={editorRef}
+                className={`w-full h-[calc(100%-3.5rem)] border-none rounded-none resize-none font-mono focus:ring-0 focus:outline-none text-base ${isTextRefined ? 'selection:bg-green-200 dark:selection:bg-green-800 selection:text-black dark:selection:text-white' : ''}`}
                 value={mdxContent}
                 onChange={handleContentChange}
                 onSelect={handleEditorSelect}
                 style={{
                   fontSize: '1rem',
-                  lineHeight: '1.5',
-                  minHeight: isEditorFullscreen ? 'calc(100vh - 120px)' : '500px'
+                  lineHeight: '1.6',
+                  minHeight: isEditorFullscreen ? 'calc(100vh - 120px)' : '500px',
+                  padding: '1rem 1.5rem',
+                  tabSize: '2',
+                  overflowX: 'auto',
+                  whiteSpace: 'pre-wrap',
+                  maxWidth: '100%',
+                  boxSizing: 'border-box',
+                  wordWrap: 'break-word',
+                  wordBreak: 'break-word'
                 }}
               />
             </div>
 
             {/* Preview Panel */}
             <div
-              className={`${getPreviewWidth()} h-full overflow-auto transition-all duration-300 ${
-                isMobileView && activeTab !== 'preview' ? 'hidden' : ''
+              className={`${getPreviewWidth()} h-full overflow-hidden transition-all duration-300 ${
+                editorViewMode === 'code' && !isPreviewFullscreen ? 'hidden' : ''
               } ${isPreviewFullscreen ? 'w-full' : ''}`}
+              style={{ maxWidth: editorViewMode === 'split' ? '50%' : '100%' }}
             >
               <div className="p-3 h-14 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
-                <h2 className="text-lg font-semibold">Preview</h2>
+                <div className="flex items-center">
+                  <h2 className="text-lg font-semibold">Preview</h2>
+                </div>
                 <div className="flex items-center gap-2">
                   <Button
                     variant="ghost"
@@ -1241,16 +1383,22 @@ function LessonPlan() {
                 </div>
               </div>
               <div
-                className={`overflow-auto h-[calc(100%-3.5rem)] w-full ${isPreviewFullscreen ? 'p-6' : 'p-4'}`}
+                className={`overflow-auto h-[calc(100%-3.5rem)] w-full`}
                 style={{
-                  minHeight: isPreviewFullscreen ? 'calc(100vh - 120px)' : '500px'
+                  minHeight: isPreviewFullscreen ? 'calc(100vh - 120px)' : '500px',
+                  padding: '1rem 1.5rem',
+                  maxWidth: '100%',
+                  boxSizing: 'border-box',
+                  wordWrap: 'break-word',
+                  overflowWrap: 'break-word'
                 }}
               >
-                <div className="prose prose-sm sm:prose dark:prose-invert w-full max-w-none prose-headings:text-inherit prose-p:text-inherit prose-a:text-blue-600 prose-strong:font-bold prose-em:italic prose-ul:list-disc prose-ol:list-decimal prose-li:ml-4 prose-pre:bg-gray-100 dark:prose-pre:bg-gray-800 prose-pre:p-4 prose-pre:rounded prose-pre:overflow-auto prose-code:text-red-500 prose-blockquote:border-l-4 prose-blockquote:pl-4 prose-blockquote:italic prose-blockquote:text-gray-700 dark:prose-blockquote:text-gray-300 prose-img:max-w-full">
+                {/* <div className="prose prose-sm sm:prose dark:prose-invert w-full max-w-none prose-headings:text-inherit prose-p:text-inherit prose-a:text-blue-600 prose-strong:font-bold prose-em:italic prose-ul:list-disc prose-ol:list-decimal prose-li:ml-4 prose-pre:bg-gray-100 dark:prose-pre:bg-gray-800 prose-pre:p-4 prose-pre:rounded prose-pre:overflow-auto prose-code:text-red-500 prose-blockquote:border-l-4 prose-blockquote:pl-4 prose-blockquote:italic prose-blockquote:text-gray-700 dark:prose-blockquote:text-gray-300 prose-img:max-w-full bg-red-500"> */}
                   <MDXRenderer content={mdxContent} />
-                </div>
+                {/* </div> */}
               </div>
             </div>
+            </div> {/* Close the flex-row div */}
           </div>
         </div>
       )}
