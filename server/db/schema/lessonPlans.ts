@@ -7,7 +7,8 @@ const savedLessonTopicSchema = z.object({
   topic: z.string().min(1),
   mdxContent: z.string(),
   isSubtopic: z.boolean(),
-  parentTopic: z.string().optional()
+  parentTopic: z.string().optional(),
+  mainTopic: z.string().optional()
 });
 
 export const lessonPlans = pgTable(
@@ -22,6 +23,7 @@ export const lessonPlans = pgTable(
       mdxContent: string;
       isSubtopic: boolean;
       parentTopic?: string;
+      mainTopic?: string;
     }[]>(),
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow()

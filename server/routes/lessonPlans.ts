@@ -18,7 +18,8 @@ export const createLessonPlanSchema = z.object({
         topic: z.string().min(1),
         mdxContent: z.string(),
         isSubtopic: z.boolean(),
-        parentTopic: z.string().optional()
+        parentTopic: z.string().optional(),
+        mainTopic: z.string().optional()
     }))
 });
 
@@ -39,12 +40,12 @@ export const lessonPlansRoute = new Hono()
     .get("/:id", getUser, async (c) => {
         const user = c.var.user;
         const id = parseInt(c.req.param("id"));
-        
+
         if (isNaN(id)) {
             c.status(400);
             return c.json({ error: "Invalid lesson plan ID" });
         }
-        
+
         const lessonPlan = await db
             .select()
             .from(lessonPlanTable)
@@ -53,12 +54,12 @@ export const lessonPlansRoute = new Hono()
                 eq(lessonPlanTable.userId, user.id)
             ))
             .limit(1);
-            
+
         if (!lessonPlan.length) {
             c.status(404);
             return c.json({ error: "Lesson plan not found" });
         }
-        
+
         return c.json(lessonPlan[0]);
     })
 
@@ -86,12 +87,12 @@ export const lessonPlansRoute = new Hono()
         const lessonPlanData = await c.req.valid("json");
         const user = c.var.user;
         const id = parseInt(c.req.param("id"));
-        
+
         if (isNaN(id)) {
             c.status(400);
             return c.json({ error: "Invalid lesson plan ID" });
         }
-        
+
         // Check if the lesson plan exists and belongs to the user
         const existingLessonPlan = await db
             .select()
@@ -101,12 +102,12 @@ export const lessonPlansRoute = new Hono()
                 eq(lessonPlanTable.userId, user.id)
             ))
             .limit(1);
-            
+
         if (!existingLessonPlan.length) {
             c.status(404);
             return c.json({ error: "Lesson plan not found" });
         }
-        
+
         // Update the lesson plan
         const result = await db
             .update(lessonPlanTable)
@@ -122,7 +123,7 @@ export const lessonPlansRoute = new Hono()
             ))
             .returning()
             .then((res) => res[0]);
-            
+
         return c.json(result);
     })
 
@@ -130,12 +131,12 @@ export const lessonPlansRoute = new Hono()
     .delete("/:id", getUser, async (c) => {
         const user = c.var.user;
         const id = parseInt(c.req.param("id"));
-        
+
         if (isNaN(id)) {
             c.status(400);
             return c.json({ error: "Invalid lesson plan ID" });
         }
-        
+
         // Check if the lesson plan exists and belongs to the user
         const existingLessonPlan = await db
             .select()
@@ -145,12 +146,12 @@ export const lessonPlansRoute = new Hono()
                 eq(lessonPlanTable.userId, user.id)
             ))
             .limit(1);
-            
+
         if (!existingLessonPlan.length) {
             c.status(404);
             return c.json({ error: "Lesson plan not found" });
         }
-        
+
         // Delete the lesson plan
         await db
             .delete(lessonPlanTable)
@@ -158,7 +159,7 @@ export const lessonPlansRoute = new Hono()
                 eq(lessonPlanTable.id, id),
                 eq(lessonPlanTable.userId, user.id)
             ));
-            
+
         c.status(204);
         return c.body(null);
     });

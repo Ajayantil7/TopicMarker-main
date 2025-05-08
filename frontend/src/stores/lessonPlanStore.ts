@@ -13,6 +13,7 @@ export interface SavedLessonTopic {
   mdxContent: string;
   isSubtopic: boolean;
   parentTopic?: string;
+  mainTopic?: string; // The main topic (lesson plan name)
 }
 
 // Define the interface for a complete lesson plan
@@ -121,17 +122,26 @@ export const useLessonPlanStore = create<LessonPlanState>()(
       }),
       saveMdxToCurrentLesson: (topic, mdxContent, isSubtopic, parentTopic) => {
         set((state) => {
+          // Ensure we have a main topic
+          const mainTopicValue = state.mainTopic || '';
+
+          // If this is a parent topic (not a subtopic), set its parent to itself
+          const finalParentTopic = isSubtopic
+            ? (parentTopic || mainTopicValue) // Use provided parent or main topic for subtopics
+            : topic; // For parent topics, set parent to itself
+
           if (!state.currentLessonPlan) {
             // If no current lesson plan, create a new one
             return {
               currentLessonPlan: {
-                name: state.mainTopic || 'New Lesson Plan',
-                mainTopic: state.mainTopic || '',
+                name: mainTopicValue || 'New Lesson Plan',
+                mainTopic: mainTopicValue,
                 topics: [{
                   topic,
                   mdxContent,
                   isSubtopic,
-                  parentTopic
+                  parentTopic: finalParentTopic,
+                  mainTopic: mainTopicValue
                 }]
               },
               savedTopicsMap: { [topic]: mdxContent },
@@ -148,7 +158,11 @@ export const useLessonPlanStore = create<LessonPlanState>()(
             updatedTopics = [...state.currentLessonPlan.topics];
             updatedTopics[existingTopicIndex] = {
               ...updatedTopics[existingTopicIndex],
-              mdxContent
+              mdxContent,
+              // Update parent topic if needed
+              parentTopic: finalParentTopic,
+              // Update main topic
+              mainTopic: mainTopicValue
             };
           } else {
             // Add new topic
@@ -158,7 +172,8 @@ export const useLessonPlanStore = create<LessonPlanState>()(
                 topic,
                 mdxContent,
                 isSubtopic,
-                parentTopic
+                parentTopic: finalParentTopic,
+                mainTopic: mainTopicValue
               }
             ];
           }

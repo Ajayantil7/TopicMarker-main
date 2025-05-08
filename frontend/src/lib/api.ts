@@ -37,13 +37,25 @@ export async function searchTopics(query: string, limit?: number) {
 }
 
 // Save MDX content for a topic
-export async function saveMdxContent(selectedTopic: string, mainTopic: string, mdxContent: string) {
+export async function saveMdxContent(
+  selectedTopic: string,
+  mainTopic: string,
+  mdxContent: string,
+  isSubtopic: boolean = false,
+  parentTopic?: string
+) {
   try {
+    // If it's a parent topic, set parent to itself
+    const finalParentTopic = isSubtopic ? (parentTopic || mainTopic) : selectedTopic;
+
     console.log('Saving MDX content with:', {
       axiosWing: mainTopic,
       topic: selectedTopic,
       difficulty: "Beginner",
-      mdxContent: mdxContent.substring(0, 100) + '...' // Log just the beginning for debugging
+      mdxContent: mdxContent.substring(0, 100) + '...', // Log just the beginning for debugging
+      mainTopic: mainTopic,
+      parentTopic: finalParentTopic,
+      isSubtopic: isSubtopic
     });
 
     const res = await api.topics.$post({
@@ -51,7 +63,10 @@ export async function saveMdxContent(selectedTopic: string, mainTopic: string, m
         axiosWing: mainTopic, // Using mainTopic as the axiosWing (note the 's' in axios)
         topic: selectedTopic,
         difficulty: "Beginner", // Default difficulty
-        mdxContent: mdxContent
+        mdxContent: mdxContent,
+        mainTopic: mainTopic,
+        parentTopic: finalParentTopic,
+        isSubtopic: isSubtopic
       }
     });
 
@@ -441,14 +456,27 @@ export async function refineWithUrlsRaw(
 export async function saveLessonPlan(lessonPlan: LessonPlan) {
   try {
     console.log('Saving lesson plan:', {
+      id: lessonPlan.id,
       name: lessonPlan.name,
       mainTopic: lessonPlan.mainTopic,
       topicsCount: lessonPlan.topics.length
     });
 
-    const res = await api.lessonPlans.$post({
-      json: lessonPlan
-    });
+    let res;
+
+    // If the lesson plan has an ID, update it instead of creating a new one
+    if (lessonPlan.id) {
+      console.log(`Updating existing lesson plan with ID: ${lessonPlan.id}`);
+      res = await api.lessonPlans[`:id`].$put({
+        param: { id: lessonPlan.id.toString() },
+        json: lessonPlan
+      });
+    } else {
+      console.log('Creating new lesson plan');
+      res = await api.lessonPlans.$post({
+        json: lessonPlan
+      });
+    }
 
     if (!res.ok) {
       const errorText = await res.text().catch(() => 'No error text available');

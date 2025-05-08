@@ -15,7 +15,11 @@ export const createTopicSchema = z.object({
     axiosWing: z.string().min(1),
     topic: z.string().min(3),
     difficulty: z.enum(["Beginner", "Intermediate", "Advanced"]),
-    mdxContent: z.string().min(10)
+    mdxContent: z.string().min(10),
+    // Add new fields for topic relationships
+    mainTopic: z.string().optional(),
+    parentTopic: z.string().optional(),
+    isSubtopic: z.boolean().optional()
 });
 
 export const topicsRoute = new Hono()

@@ -245,8 +245,8 @@ function LessonPlan() {
     return false;
   }, [currentLessonPlan, savedTopicsData, setHasSavedContent, setMdxContent, setShowEditor, saveMdxToCurrentLesson, selectedSubtopic, mainTopic]);
 
-  // Function to save MDX content (only to the frontend state, not to the database)
-  const handleSaveMdx = () => {
+  // Function to save MDX content (only to frontend state management)
+  const handleSaveMdx = async () => {
     if (!mdxContent.trim()) {
       toast.error('Cannot save empty content');
       return;
@@ -254,6 +254,7 @@ function LessonPlan() {
 
     const selectedTopicValue = selectedTopic || selectedSubtopic || '';
     const mainTopicValue = mainTopic || '';
+    const isSubtopicValue = !!selectedSubtopic;
 
     if (!selectedTopicValue || !mainTopicValue) {
       toast.error('Topic information is missing');
@@ -263,20 +264,25 @@ function LessonPlan() {
     setIsSavingMdx(true);
 
     try {
-      // Save to the current lesson plan in the store only
+      // Determine parent topic
+      // If it's a subtopic, use mainTopic as parent
+      // If it's a parent topic, use itself as parent
+      const parentTopicValue = isSubtopicValue ? mainTopicValue : selectedTopicValue;
+
+      // Save to the current lesson plan in the store (frontend state management only)
       saveMdxToCurrentLesson(
         selectedTopicValue,
         mdxContent,
-        !!selectedSubtopic,
-        selectedSubtopic ? mainTopicValue : undefined
+        isSubtopicValue,
+        parentTopicValue
       );
 
       // Mark as saved in the UI
       setHasSavedContent(true);
       toast.success('MDX content saved to lesson plan');
     } catch (error) {
-      console.error('Error saving MDX content to state:', error);
-      toast.error('Failed to save MDX content to lesson plan');
+      console.error('Error saving MDX content:', error);
+      toast.error('Failed to save MDX content');
     } finally {
       setIsSavingMdx(false);
     }
@@ -301,15 +307,27 @@ function LessonPlan() {
     setShowGenerationOptions(true);
     setLastUsedGenerationMethod(null);
 
+    // If we have a current lesson plan, update the parent topic for this topic
+    if (currentLessonPlan) {
+      const existingTopic = currentLessonPlan.topics.find(t => t.topic === topic);
+      if (existingTopic && !existingTopic.parentTopic) {
+        // For parent topics, set parent to itself
+        saveMdxToCurrentLesson(
+          topic,
+          existingTopic.mdxContent,
+          false, // Not a subtopic
+          topic // Parent topic is itself
+        );
+      }
+    }
+
     // State is automatically persisted by Zustand
   };
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const handleSubtopicSelect = (subtopic: string, parentTopic: string) => {
     setSelectedSubtopic(subtopic);
     setSelectedTopic(null);
     // Keep the search query as the main topic instead of setting it to the parent topic
-    // We're not using parentTopic here, but keeping the parameter for future use
     setShowRightSidebar(true);
 
     // Check if there's saved content for this subtopic in the current lesson plan or database
@@ -323,6 +341,23 @@ function LessonPlan() {
     setGenerationError(null);
     setShowGenerationOptions(true);
     setLastUsedGenerationMethod(null);
+
+    // If we have a current lesson plan, update the parent topic for this subtopic
+    if (currentLessonPlan) {
+      const existingTopic = currentLessonPlan.topics.find(t => t.topic === subtopic);
+      if (existingTopic) {
+        // For subtopics, use the provided parentTopic (which comes from the hierarchy)
+        // This ensures the correct parent-child relationship is maintained
+        if (parentTopic && (!existingTopic.parentTopic || existingTopic.parentTopic !== parentTopic)) {
+          saveMdxToCurrentLesson(
+            subtopic,
+            existingTopic.mdxContent,
+            true, // Is a subtopic
+            parentTopic // Use the provided parent topic from the hierarchy
+          );
+        }
+      }
+    }
 
     // State is automatically persisted by Zustand
   };
@@ -895,6 +930,13 @@ function LessonPlan() {
   };
 
   // Handle saving the current lesson plan to the database
+  // This function ensures that each topic/subtopic has:
+  // 1. A parent topic:
+  //    - If it's a subtopic, parent is the actual parent topic from the hierarchy (not the main topic)
+  //    - If it's a parent topic, parent is itself
+  // 2. The main topic (lesson plan name) to maintain the hierarchy relationship
+  // This ensures the correct hierarchy is maintained, e.g., "What is RAG and why it is important"
+  // has parent topic "Introduction to RAG" and main topic "RAG"
   const handleSaveLessonPlan = async () => {
     if (!mainTopic) {
       toast.error('Please search for a topic first');
@@ -910,21 +952,65 @@ function LessonPlan() {
       // Add the current topic if it has content
       if (mdxContent && (selectedTopic || selectedSubtopic)) {
         const currentTopic = selectedTopic || selectedSubtopic || '';
+        const isCurrentTopicSubtopic = !!selectedSubtopic;
+
+        // Determine parent topic
+        // If it's a subtopic, we need to find its actual parent topic from the hierarchy
+        // If it's a parent topic, use itself as parent
+        let parentTopicValue;
+
+        if (isCurrentTopicSubtopic) {
+          // For subtopics, we need to find the parent topic from the hierarchy
+          // This could be a parent topic from the topicsData
+          if (topicsData && isTopicsResponse(topicsData) && topicsData.status === 'success') {
+            try {
+              const topicsString = topicsData.data.topics;
+              const jsonMatch = topicsString.match(/```json\n([\s\S]*?)\n```/);
+
+              if (jsonMatch && jsonMatch[1]) {
+                const parsedTopics: Topic[] = JSON.parse(jsonMatch[1]);
+
+                // Find the parent topic that contains this subtopic
+                const parentTopicObj = parsedTopics.find(topic =>
+                  topic.subtopics && topic.subtopics.includes(currentTopic)
+                );
+
+                if (parentTopicObj) {
+                  parentTopicValue = parentTopicObj.topic;
+                } else {
+                  // If we can't find the parent, use the main topic as fallback
+                  parentTopicValue = mainTopic;
+                }
+              } else {
+                parentTopicValue = mainTopic; // Fallback
+              }
+            } catch (error) {
+              console.error("Error finding parent topic:", error);
+              parentTopicValue = mainTopic; // Fallback
+            }
+          } else {
+            parentTopicValue = mainTopic; // Fallback
+          }
+        } else {
+          // For parent topics, the parent is itself
+          parentTopicValue = currentTopic;
+        }
 
         // First save to the current lesson in the store to ensure it's up to date
         saveMdxToCurrentLesson(
           currentTopic,
           mdxContent,
-          !!selectedSubtopic,
-          selectedSubtopic ? mainTopic : undefined
+          isCurrentTopicSubtopic,
+          parentTopicValue
         );
 
         // Then add it to the topics to save
         topicsToSave.push({
           topic: currentTopic,
           mdxContent,
-          isSubtopic: !!selectedSubtopic,
-          parentTopic: selectedSubtopic ? mainTopic : undefined
+          isSubtopic: isCurrentTopicSubtopic,
+          parentTopic: parentTopicValue,
+          mainTopic: mainTopic // Add the main topic (lesson plan name)
         });
       }
 
@@ -938,11 +1024,54 @@ function LessonPlan() {
 
           // Check if this topic is already in the list
           if (!topicsToSave.some(t => t.topic === topic.topic)) {
+            // Ensure parent topic is set correctly
+            let parentTopicValue = topic.parentTopic;
+
+            // If no parent topic is set or it needs to be updated
+            if (!parentTopicValue) {
+              if (topic.isSubtopic) {
+                // For subtopics, try to find the parent topic from the hierarchy
+                if (topicsData && isTopicsResponse(topicsData) && topicsData.status === 'success') {
+                  try {
+                    const topicsString = topicsData.data.topics;
+                    const jsonMatch = topicsString.match(/```json\n([\s\S]*?)\n```/);
+
+                    if (jsonMatch && jsonMatch[1]) {
+                      const parsedTopics: Topic[] = JSON.parse(jsonMatch[1]);
+
+                      // Find the parent topic that contains this subtopic
+                      const parentTopicObj = parsedTopics.find(parentTopic =>
+                        parentTopic.subtopics && parentTopic.subtopics.includes(topic.topic)
+                      );
+
+                      if (parentTopicObj) {
+                        parentTopicValue = parentTopicObj.topic;
+                      } else {
+                        // If we can't find the parent, use the main topic as fallback
+                        parentTopicValue = mainTopic;
+                      }
+                    } else {
+                      parentTopicValue = mainTopic; // Fallback
+                    }
+                  } catch (error) {
+                    console.error("Error finding parent topic:", error);
+                    parentTopicValue = mainTopic; // Fallback
+                  }
+                } else {
+                  parentTopicValue = mainTopic; // Fallback
+                }
+              } else {
+                // For parent topics, the parent is itself
+                parentTopicValue = topic.topic;
+              }
+            }
+
             topicsToSave.push({
               topic: topic.topic,
               mdxContent: topic.mdxContent,
               isSubtopic: topic.isSubtopic,
-              parentTopic: topic.parentTopic
+              parentTopic: parentTopicValue,
+              mainTopic: mainTopic // Add the main topic (lesson plan name)
             });
           }
         });
@@ -965,6 +1094,11 @@ function LessonPlan() {
       const result = await saveLessonPlan(lessonPlan);
       console.log('Lesson plan saved to database:', result);
 
+      // Check if the result is an error response
+      if ('error' in result) {
+        throw new Error(result.error);
+      }
+
       // Update the current lesson plan in the store
       // Convert the result to match our LessonPlan type
       const savedLessonPlan = {
@@ -978,7 +1112,12 @@ function LessonPlan() {
 
       setCurrentLessonPlan(savedLessonPlan);
 
-      toast.success('Lesson plan saved to database successfully');
+      // Show different success message based on whether we created or updated
+      if (lessonPlan.id) {
+        toast.success('Lesson plan updated in database successfully');
+      } else {
+        toast.success('New lesson plan saved to database successfully');
+      }
     } catch (error) {
       console.error('Error saving lesson plan to database:', error);
       toast.error('Failed to save lesson plan to database');
@@ -1090,7 +1229,7 @@ function LessonPlan() {
             ) : (
               <>
                 <Save className="h-4 w-4 mr-1" />
-                Save Lesson
+                {currentLessonPlan?.id ? 'Update Lesson in Database' : 'Save Lesson to Database'}
               </>
             )}
           </Button>
@@ -1455,7 +1594,7 @@ function LessonPlan() {
                                   Saving...
                                 </>
                               ) : (
-                                hasSavedContent ? 'Update Saved MDX' : 'Save MDX'
+                                hasSavedContent ? 'Update MDX in Lesson' : 'Save MDX to Lesson'
                               )}
                             </Button>
 
@@ -1634,7 +1773,7 @@ function LessonPlan() {
                                   Saving...
                                 </>
                               ) : (
-                                hasSavedContent ? 'Update Saved MDX' : 'Save MDX'
+                                hasSavedContent ? 'Update MDX in Lesson' : 'Save MDX to Lesson'
                               )}
                             </Button>
 
