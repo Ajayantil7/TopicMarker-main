@@ -1,11 +1,12 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { useAuth } from '@/lib/auth-context';
 import { api, getLessonPlans, deleteLessonPlan } from '@/lib/api';
 import { useLessonPlanStore } from '@/stores/lessonPlanStore';
+import { Input } from '@/components/ui/input';
 import {
   Card,
   CardContent,
@@ -36,6 +37,7 @@ import {
   BookMarked,
   Bookmark,
   Trash2,
+  Search,
 } from 'lucide-react';
 
 export const Route = createFileRoute('/_authenticated/dashboard')({
@@ -63,6 +65,7 @@ function Dashboard() {
   const [lessonPlanToDelete, setLessonPlanToDelete] = useState<number | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
@@ -115,7 +118,19 @@ function Dashboard() {
   const totalTopics = topics?.length || 0;
   const lessonPlans = lessonPlansData?.lessonPlans || [];
   const totalLessonPlans = lessonPlans.length;
-  const recentLessonPlans = lessonPlans.slice(0, 5);
+
+  // Filter lesson plans based on search query
+  const filteredLessonPlans = useMemo(() => {
+    if (!searchQuery.trim()) {
+      return lessonPlans;
+    }
+    return lessonPlans.filter(plan =>
+      plan.name.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+  }, [lessonPlans, searchQuery]);
+
+  // Get the first 5 lesson plans for display
+  const displayedLessonPlans = filteredLessonPlans.slice(0, 5);
 
   const topicsByDifficulty = {
     Beginner: topics?.filter(topic => topic.difficulty === 'Beginner').length || 0,
@@ -191,7 +206,7 @@ function Dashboard() {
       </p>
 
       {/* Stats Overview */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-lg font-medium">Lesson Plans</CardTitle>
@@ -220,36 +235,6 @@ function Dashboard() {
               <span className="text-lg">
                 {lastActive ? formatDate(lastActive) : 'First session'}
               </span>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-lg font-medium">Topic Breakdown</CardTitle>
-            <CardDescription>By difficulty level</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center space-x-2">
-              <BarChart className="h-8 w-8 text-primary" />
-              {isTopicsLoading ? (
-                <Skeleton className="h-10 w-full" />
-              ) : (
-                <div className="flex flex-col w-full">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm">Beginner</span>
-                    <span className="text-sm font-medium">{topicsByDifficulty.Beginner}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm">Intermediate</span>
-                    <span className="text-sm font-medium">{topicsByDifficulty.Intermediate}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm">Advanced</span>
-                    <span className="text-sm font-medium">{topicsByDifficulty.Advanced}</span>
-                  </div>
-                </div>
-              )}
             </div>
           </CardContent>
         </Card>
@@ -292,14 +277,26 @@ function Dashboard() {
         </Button>
       </div>
 
-      {/* Recent Lesson Plans */}
-      <h2 className="text-xl font-semibold mb-4">Recent Lesson Plans</h2>
+      {/* Saved Lesson Plans */}
+      <h2 className="text-xl font-semibold mb-4">Saved Lesson Plans</h2>
       <Card>
-        <CardHeader>
+        <CardHeader className="pb-2">
           <CardTitle>Your Lesson Plans</CardTitle>
           <CardDescription>
-            The last {Math.min(5, totalLessonPlans)} lesson plans you've created
+            Search and manage your saved lesson plans
           </CardDescription>
+          <div className="flex items-center space-x-2 mt-4">
+            <div className="relative flex-1">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                type="text"
+                placeholder="Search lesson plans..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-8"
+              />
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
           {isLessonPlansLoading ? (
@@ -308,9 +305,9 @@ function Dashboard() {
                 <Skeleton key={i} className="h-12 w-full" />
               ))}
             </div>
-          ) : recentLessonPlans.length > 0 ? (
+          ) : filteredLessonPlans.length > 0 ? (
             <div className="space-y-4">
-              {recentLessonPlans.map((plan) => (
+              {displayedLessonPlans.map((plan) => (
                 <div key={plan.id} className="flex items-start justify-between border-b pb-3 last:border-0">
                   <div>
                     <h3 className="font-medium">{plan.name}</h3>
@@ -348,14 +345,26 @@ function Dashboard() {
             </div>
           ) : (
             <div className="text-center py-6">
-              <p className="text-muted-foreground mb-4">You haven't created any lesson plans yet</p>
-              <Button asChild>
-                <Link to="/lesson-plan">Create Your First Lesson Plan</Link>
-              </Button>
+              {searchQuery.trim() ? (
+                <div>
+                  <Search className="h-12 w-12 mx-auto mb-4 opacity-20" />
+                  <p className="text-muted-foreground mb-4">No lesson plans found matching "{searchQuery}"</p>
+                  <Button variant="outline" onClick={() => setSearchQuery('')}>
+                    Clear Search
+                  </Button>
+                </div>
+              ) : (
+                <div>
+                  <p className="text-muted-foreground mb-4">You haven't created any lesson plans yet</p>
+                  <Button asChild>
+                    <Link to="/lesson-plan">Create Your First Lesson Plan</Link>
+                  </Button>
+                </div>
+              )}
             </div>
           )}
         </CardContent>
-        {recentLessonPlans.length > 0 && (
+        {filteredLessonPlans.length > 0 && (
           <CardFooter className="border-t pt-4">
             <Button variant="outline" className="w-full" asChild>
               <Link to="/lesson-plan">Create New Lesson Plan</Link>

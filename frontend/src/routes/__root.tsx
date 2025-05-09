@@ -63,9 +63,6 @@ function NavBar() {
           <Link to="/lesson-plan" className="[&.active]:font-bold text-base hover:text-primary transition-colors">
             Lesson Plan
           </Link>
-          <Link to="/profile" className="[&.active]:font-bold text-base hover:text-primary transition-colors">
-            Profile
-          </Link>
         </>
       )}
     </>

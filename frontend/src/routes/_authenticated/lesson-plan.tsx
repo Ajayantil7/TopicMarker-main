@@ -15,6 +15,7 @@ import {
   saveLessonPlan,
   getLessonPlanById
 } from '@/lib/api';
+import { stripFrontmatter } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -39,6 +40,9 @@ interface Topic {
   topic: string;
   subtopics: string[];
 }
+
+// Alias for Topic to match the usage in reconstructHierarchyFromTopics
+type TopicHierarchy = Topic;
 
 interface SavedTopic {
   id: number;
@@ -269,8 +273,8 @@ function LessonPlan() {
       if (savedTopic && savedTopic.mdxContent) {
         console.log(`Found saved content for ${topicName} in current lesson plan`);
         setHasSavedContent(true);
-        // If there's saved content, use it
-        setMdxContent(savedTopic.mdxContent);
+        // If there's saved content, use it - strip frontmatter if present
+        setMdxContent(stripFrontmatter(savedTopic.mdxContent));
         setShowEditor(true);
 
         // Make sure the right sidebar is visible
@@ -299,8 +303,8 @@ function LessonPlan() {
       if (savedTopic) {
         console.log(`Found saved content for ${topicName} in database`);
         setHasSavedContent(true);
-        // If there's saved content, use it
-        setMdxContent(savedTopic.mdxContent);
+        // If there's saved content, use it - strip frontmatter if present
+        setMdxContent(stripFrontmatter(savedTopic.mdxContent));
         setShowEditor(true);
 
         // Make sure the right sidebar is visible
@@ -495,7 +499,9 @@ function LessonPlan() {
       });
 
       const rawMdx = await generateSingleTopicRaw(selectedTopicValue, mainTopicValue, 3);
-      setMdxContent(rawMdx);
+      // Strip frontmatter before setting the content
+      const cleanedMdx = stripFrontmatter(rawMdx);
+      setMdxContent(cleanedMdx);
       setShowEditor(true);
       // Keep the right sidebar visible
       setShowRightSidebar(true);
@@ -534,7 +540,9 @@ function LessonPlan() {
       });
 
       const rawMdx = await generateMdxFromUrlsRaw(validUrls, selectedTopicValue, mainTopicValue, undefined, true);
-      setMdxContent(rawMdx);
+      // Strip frontmatter before setting the content
+      const cleanedMdx = stripFrontmatter(rawMdx);
+      setMdxContent(cleanedMdx);
       setShowEditor(true);
       // Keep the right sidebar visible
       setShowRightSidebar(true);
@@ -566,7 +574,9 @@ function LessonPlan() {
       });
 
       const rawMdx = await generateMdxLlmOnlyRaw(selectedTopicValue, mainTopicValue);
-      setMdxContent(rawMdx);
+      // Strip frontmatter before setting the content
+      const cleanedMdx = stripFrontmatter(rawMdx);
+      setMdxContent(cleanedMdx);
       setShowEditor(true);
       // Keep the right sidebar visible
       setShowRightSidebar(true);
@@ -681,7 +691,8 @@ function LessonPlan() {
         // Only update the hierarchy if we successfully reconstructed it
         if (reconstructedHierarchy && reconstructedHierarchy.length > 0) {
           console.log('Setting reconstructed hierarchy from lesson plan:', reconstructedHierarchy);
-          setTopicsHierarchy(reconstructedHierarchy);
+          // Directly update the store to ensure the hierarchy is updated
+          useLessonPlanStore.setState({ topicsHierarchy: reconstructedHierarchy });
         } else {
           console.warn('Failed to reconstruct hierarchy from lesson plan topics');
         }
@@ -696,7 +707,8 @@ function LessonPlan() {
           console.log('Selecting parent topic:', parentTopic.topic);
           setSelectedTopic(parentTopic.topic);
           setSelectedSubtopic(null);
-          setMdxContent(parentTopic.mdxContent || '');
+          // Strip frontmatter if present
+          setMdxContent(stripFrontmatter(parentTopic.mdxContent || ''));
           setShowEditor(!!parentTopic.mdxContent);
         } else {
           // If no parent topic, just select the first one
@@ -711,7 +723,8 @@ function LessonPlan() {
             setSelectedSubtopic(null);
           }
 
-          setMdxContent(firstTopic.mdxContent || '');
+          // Strip frontmatter if present
+          setMdxContent(stripFrontmatter(firstTopic.mdxContent || ''));
           setShowEditor(!!firstTopic.mdxContent);
         }
 
@@ -778,6 +791,7 @@ function LessonPlan() {
   useEffect(() => {
     if (lessonPlanToLoad !== null) {
       console.log(`Found lesson plan to load from store: ${lessonPlanToLoad}`);
+
       // Add a small delay to ensure the component is fully mounted
       setTimeout(() => {
         handleLoadLessonPlan(lessonPlanToLoad);
@@ -991,8 +1005,11 @@ function LessonPlan() {
         mainTopicValue
       );
 
+      // Process the response to strip frontmatter if present
+      const processedResponse = stripFrontmatter(response);
+
       // Extract the refined text (the API returns the full document with the selected text replaced)
-      const refinedText = response.substring(selectionStart, response.length - (mdxContent.length - selectionEnd));
+      const refinedText = processedResponse.substring(selectionStart, processedResponse.length - (mdxContent.length - selectionEnd));
       setRefinedText(refinedText);
 
       // Update the content
@@ -1097,8 +1114,11 @@ function LessonPlan() {
         2 // Default number of results
       );
 
+      // Process the response to strip frontmatter if present
+      const processedResponse = stripFrontmatter(response);
+
       // Extract the refined text (the API returns the full document with the selected text replaced)
-      const refinedText = response.substring(selectionStart, response.length - (mdxContent.length - selectionEnd));
+      const refinedText = processedResponse.substring(selectionStart, processedResponse.length - (mdxContent.length - selectionEnd));
       setRefinedText(refinedText);
 
       // Update the content
@@ -1185,8 +1205,11 @@ function LessonPlan() {
         validUrls
       );
 
+      // Process the response to strip frontmatter if present
+      const processedResponse = stripFrontmatter(response);
+
       // Extract the refined text (the API returns the full document with the selected text replaced)
-      const refinedText = response.substring(selectionStart, response.length - (mdxContent.length - selectionEnd));
+      const refinedText = processedResponse.substring(selectionStart, processedResponse.length - (mdxContent.length - selectionEnd));
       setRefinedText(refinedText);
 
       // Update the content
