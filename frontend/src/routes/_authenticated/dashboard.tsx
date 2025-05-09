@@ -40,6 +40,7 @@ import {
   Search,
   Globe,
   Lock,
+  FileCode,
 } from 'lucide-react';
 
 export const Route = createFileRoute('/_authenticated/dashboard')({
@@ -201,6 +202,12 @@ function Dashboard() {
       console.error('Error updating lesson plan public status:', error);
       toast.error(`Failed to ${isPublic ? 'publish' : 'unpublish'} lesson plan`);
     }
+  };
+
+  // Handle viewing combined MDX content for a lesson plan
+  const handleViewCombinedMdx = (lessonPlan: LessonPlanResponse) => {
+    // Open the combined MDX page in a new tab with the lesson plan ID
+    window.open(`/combined-mdx?id=${lessonPlan.id}`, '_blank');
   };
 
   if (isAuthLoading) {
@@ -373,6 +380,15 @@ function Dashboard() {
                       onClick={() => handleViewLessonPlan(plan.id)}
                     >
                       View
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => handleViewCombinedMdx(plan as LessonPlanResponse)}
+                      title="View all MDX content combined in one document"
+                      className="hover:bg-primary/10 hover:text-primary"
+                    >
+                      <FileCode className="h-4 w-4" />
                     </Button>
                     <Button
                       size="sm"

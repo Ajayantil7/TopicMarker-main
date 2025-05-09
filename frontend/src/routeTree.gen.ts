@@ -12,6 +12,7 @@
 
 import { Route as rootRoute } from './routes/__root'
 import { Route as MdxPublicImport } from './routes/mdxPublic'
+import { Route as CombinedMdxImport } from './routes/combined-mdx'
 import { Route as AboutImport } from './routes/about'
 import { Route as AuthenticatedImport } from './routes/_authenticated'
 import { Route as IndexImport } from './routes/index'
@@ -26,6 +27,11 @@ import { Route as AuthenticatedDashboardImport } from './routes/_authenticated/d
 
 const MdxPublicRoute = MdxPublicImport.update({
   path: '/mdxPublic',
+  getParentRoute: () => rootRoute,
+} as any)
+
+const CombinedMdxRoute = CombinedMdxImport.update({
+  path: '/combined-mdx',
   getParentRoute: () => rootRoute,
 } as any)
 
@@ -92,6 +98,10 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AboutImport
       parentRoute: typeof rootRoute
     }
+    '/combined-mdx': {
+      preLoaderRoute: typeof CombinedMdxImport
+      parentRoute: typeof rootRoute
+    }
     '/mdxPublic': {
       preLoaderRoute: typeof MdxPublicImport
       parentRoute: typeof rootRoute
@@ -136,6 +146,7 @@ export const routeTree = rootRoute.addChildren([
     AuthenticatedIndexRoute,
   ]),
   AboutRoute,
+  CombinedMdxRoute,
   MdxPublicRoute,
 ])
 

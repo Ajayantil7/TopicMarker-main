@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { BookMarked, Calendar, Search, User, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
+import { BookMarked, Calendar, Search, User, FileCode, Loader2 } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 
 export const Route = createFileRoute('/_authenticated/public-lessons')({
@@ -74,48 +74,10 @@ function PublicLessons() {
     });
   };
 
-  // Function to manually check if a lesson plan is public
-  const [isCheckingPublic, setIsCheckingPublic] = useState(false);
-  const [checkResult, setCheckResult] = useState<{id: number, isPublic: boolean} | null>(null);
-
-  const handleCheckIfPublic = async (id: number) => {
-    setIsCheckingPublic(true);
-    setCheckResult(null);
-
-    try {
-      // First check using our helper function
-      const isPublic = await checkIfLessonPlanIsPublic(id);
-      console.log(`Check result for lesson plan ${id}: isPublic = ${isPublic}`);
-
-      // Then try to directly fetch the public lesson plan
-      try {
-        const response = await getPublicLessonPlanById(id);
-        console.log(`Direct fetch result for public lesson plan ${id}:`, response);
-
-        if ('error' in response) {
-          console.error(`Error fetching public lesson plan ${id}:`, response.error);
-          toast.error(`Error: ${response.error}`);
-        } else {
-          console.log(`Successfully fetched public lesson plan ${id}`);
-          toast.success(`Successfully fetched public lesson plan: ${response.name}`);
-        }
-      } catch (error) {
-        console.error(`Error directly fetching public lesson plan ${id}:`, error);
-      }
-
-      setCheckResult({id, isPublic});
-
-      if (isPublic) {
-        toast.success(`Lesson plan ${id} is public`);
-      } else {
-        toast.error(`Lesson plan ${id} is NOT public`);
-      }
-    } catch (error) {
-      console.error(`Error checking if lesson plan ${id} is public:`, error);
-      toast.error(`Error checking if lesson plan is public: ${error instanceof Error ? error.message : String(error)}`);
-    } finally {
-      setIsCheckingPublic(false);
-    }
+  // Function to handle viewing combined MDX content
+  const handleViewCombinedMdx = (id: number) => {
+    // Open the combined MDX page in a new tab with the lesson plan ID
+    window.open(`/combined-mdx?id=${id}`, '_blank');
   };
 
   // Handle viewing a lesson plan
@@ -237,21 +199,12 @@ function PublicLessons() {
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() => handleCheckIfPublic(plan.id)}
-                      disabled={isCheckingPublic}
-                      className="flex items-center"
+                      onClick={() => handleViewCombinedMdx(plan.id)}
+                      className="flex items-center hover:bg-primary/10 hover:text-primary"
+                      title="View all MDX content combined in one document"
                     >
-                      {isCheckingPublic && checkResult?.id === plan.id ? (
-                        <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                      ) : checkResult?.id === plan.id ? (
-                        checkResult.isPublic ? (
-                          <CheckCircle className="h-4 w-4 mr-1 text-green-500" />
-                        ) : (
-                          <AlertCircle className="h-4 w-4 mr-1 text-red-500" />
-                        )
-                      ) : (
-                        <span>Check</span>
-                      )}
+                      <FileCode className="h-4 w-4 mr-1" />
+                      <span>Combined</span>
                     </Button>
                     <Button
                       size="sm"

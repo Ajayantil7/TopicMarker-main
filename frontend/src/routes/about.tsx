@@ -43,7 +43,7 @@ function About() {
                   Topic Marker began with a simple observation: creating well-structured educational content is time-consuming and often challenging, especially when trying to maintain consistency and quality across multiple topics.
                 </p>
                 <p>
-                  Founded in 2023, our platform was built to address this challenge by combining the power of Retrieval Augmented Generation (RAG) technology with an intuitive interface for organizing and sharing knowledge.
+                  Our platform was built to address this challenge by combining the power of Retrieval Augmented Generation (RAG) technology with an intuitive interface for organizing and sharing knowledge.
                 </p>
                 <p>
                   What started as a tool for educators quickly evolved into a comprehensive platform that serves content creators, researchers, and knowledge workers across various domains.
