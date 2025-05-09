@@ -510,19 +510,70 @@ export async function getLessonPlans() {
   }
 }
 
+// Define the type for a lesson plan response
+export type LessonPlanResponse = {
+  id: number;
+  userId: string;
+  name: string;
+  mainTopic: string;
+  topics: {
+    topic: string;
+    mdxContent: string;
+    isSubtopic: boolean;
+    parentTopic?: string;
+    mainTopic?: string;
+  }[];
+  createdAt: string | null;
+  updatedAt: string | null;
+};
+
+// Define the type for an error response
+export type ErrorResponse = {
+  error: string;
+};
+
 // Get a specific lesson plan by ID
-export async function getLessonPlanById(id: number) {
+export async function getLessonPlanById(id: number): Promise<LessonPlanResponse | ErrorResponse> {
   try {
+    console.log(`Fetching lesson plan with ID: ${id}`);
     const res = await api.lessonPlans[":id"].$get({ param: { id: String(id) } });
 
     if (!res.ok) {
-      throw new Error(`Failed to get lesson plan with ID ${id}`);
+      const errorText = await res.text().catch(() => 'No error text available');
+      console.error('Server error response when fetching lesson plan:', errorText);
+      return { error: `Failed to get lesson plan with ID ${id}: ${res.status} ${res.statusText}` };
     }
 
-    const data = await res.json();
+    const data = await res.json() as LessonPlanResponse;
+    console.log('Lesson plan fetched successfully:', {
+      id: data.id,
+      name: data.name,
+      mainTopic: data.mainTopic,
+      topicsCount: data.topics?.length || 0
+    });
     return data;
   } catch (error) {
     console.error(`Error in getLessonPlanById(${id}):`, error);
+    return { error: `Failed to get lesson plan: ${error instanceof Error ? error.message : String(error)}` };
+  }
+}
+
+// Delete a lesson plan by ID
+export async function deleteLessonPlan(id: number) {
+  try {
+    console.log(`Deleting lesson plan with ID: ${id}`);
+    const res = await api.lessonPlans[":id"].$delete({ param: { id: String(id) } });
+
+    if (!res.ok) {
+      const errorText = await res.text().catch(() => 'No error text available');
+      console.error('Server error response when deleting lesson plan:', errorText);
+      throw new Error(`Failed to delete lesson plan: ${res.status} ${res.statusText}`);
+    }
+
+    console.log('Lesson plan deleted successfully');
+    return true;
+  } catch (error) {
+    console.error(`Error in deleteLessonPlan(${id}):`, error);
     throw error;
   }
 }

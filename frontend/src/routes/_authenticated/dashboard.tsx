@@ -1,10 +1,11 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { useState, useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { Link } from '@tanstack/react-router';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Link, useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { useAuth } from '@/lib/auth-context';
-import { api, getLessonPlans } from '@/lib/api';
+import { api, getLessonPlans, deleteLessonPlan } from '@/lib/api';
+import { useLessonPlanStore } from '@/stores/lessonPlanStore';
 import {
   Card,
   CardContent,
@@ -16,6 +17,14 @@ import {
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   BarChart,
   FileText,
   BookOpen,
@@ -26,6 +35,7 @@ import {
   Loader2,
   BookMarked,
   Bookmark,
+  Trash2,
 } from 'lucide-react';
 
 export const Route = createFileRoute('/_authenticated/dashboard')({
@@ -50,6 +60,14 @@ async function fetchUserTopics() {
 function Dashboard() {
   const { user, isLoading: isAuthLoading } = useAuth();
   const [lastActive, setLastActive] = useState<string | null>(null);
+  const [lessonPlanToDelete, setLessonPlanToDelete] = useState<number | null>(null);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
+
+  // Get the setLessonPlanToLoad function from the store
+  const { setLessonPlanToLoad } = useLessonPlanStore();
 
   // Fetch user's saved topics
   const {
@@ -111,6 +129,49 @@ function Dashboard() {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
+    });
+  };
+
+  // Handle opening the delete confirmation dialog
+  const handleDeleteClick = (lessonPlanId: number) => {
+    setLessonPlanToDelete(lessonPlanId);
+    setIsDeleteDialogOpen(true);
+  };
+
+  // Handle confirming the deletion
+  const handleConfirmDelete = async () => {
+    if (!lessonPlanToDelete) return;
+
+    setIsDeleting(true);
+    try {
+      await deleteLessonPlan(lessonPlanToDelete);
+      // Invalidate the lesson plans query to refresh the list
+      queryClient.invalidateQueries({ queryKey: ['user-lesson-plans'] });
+      toast.success('Lesson plan deleted successfully');
+    } catch (error) {
+      console.error('Error deleting lesson plan:', error);
+      toast.error('Failed to delete lesson plan');
+    } finally {
+      setIsDeleting(false);
+      setIsDeleteDialogOpen(false);
+      setLessonPlanToDelete(null);
+    }
+  };
+
+  // Handle viewing a lesson plan
+  const handleViewLessonPlan = (lessonPlanId: number) => {
+    console.log(`Opening lesson plan with ID: ${lessonPlanId}`);
+
+    // Store the lesson plan ID in the store
+    setLessonPlanToLoad(lessonPlanId);
+
+    // Navigate to the lesson plan page with both fromDashboard flag and lessonPlanId
+    navigate({
+      to: '/lesson-plan',
+      state: {
+        fromDashboard: true,
+        lessonPlanId: lessonPlanId
+      }
     });
   };
 
@@ -262,9 +323,26 @@ function Dashboard() {
                       </span>
                     </div>
                   </div>
-                  <Button size="sm" variant="ghost" asChild>
-                    <Link to="/lesson-plan">View</Link>
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => handleViewLessonPlan(plan.id)}
+                    >
+                      View
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        handleDeleteClick(plan.id);
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -280,11 +358,46 @@ function Dashboard() {
         {recentLessonPlans.length > 0 && (
           <CardFooter className="border-t pt-4">
             <Button variant="outline" className="w-full" asChild>
-              <Link to="/lesson-plan">View All Lesson Plans</Link>
+              <Link to="/lesson-plan">Create New Lesson Plan</Link>
             </Button>
           </CardFooter>
         )}
       </Card>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Lesson Plan</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this lesson plan? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex justify-end gap-2 mt-4">
+            <Button
+              variant="outline"
+              onClick={() => setIsDeleteDialogOpen(false)}
+              disabled={isDeleting}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleConfirmDelete}
+              disabled={isDeleting}
+            >
+              {isDeleting ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                'Delete'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

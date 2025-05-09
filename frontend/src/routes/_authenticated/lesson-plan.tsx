@@ -12,7 +12,8 @@ import {
   refineWithCrawlingRaw,
   refineWithUrlsRaw,
   getSavedTopics,
-  saveLessonPlan
+  saveLessonPlan,
+  getLessonPlanById
 } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -97,6 +98,10 @@ function isMdxResponse(data: unknown): data is MdxResponse {
 // We're using Zustand for state persistence now
 
 function LessonPlan() {
+  // Get route state
+  const { state } = Route.useRouteContext();
+  const fromDashboard = state?.fromDashboard === true;
+
   // Get state and actions from Zustand store
   const {
     searchQuery, setSearchQuery,
@@ -114,7 +119,12 @@ function LessonPlan() {
     isLeftSidebarCollapsed, setIsLeftSidebarCollapsed,
     isRightSidebarCollapsed, setIsRightSidebarCollapsed,
     currentLessonPlan, setCurrentLessonPlan,
-    saveMdxToCurrentLesson
+    savedTopics, // Add this to access the saved topics
+    saveMdxToCurrentLesson,
+    hasUnsavedChanges, setHasUnsavedChanges,
+    lessonPlanToLoad, setLessonPlanToLoad,
+    topicsHierarchy, setTopicsHierarchy, // Add these to access and update the topics hierarchy
+    resetState
   } = useLessonPlanStore();
 
   // Local state for UI that doesn't need to persist
@@ -124,12 +134,14 @@ function LessonPlan() {
   const [generationError, setGenerationError] = useState<string | null>(null);
   const [isMobileView, setIsMobileView] = useState(false);
   const [isSavingMdx, setIsSavingMdx] = useState(false);
-  const [savedTopics, setSavedTopics] = useState<{id: number, topic: string, mdxContent: string}[]>([]);
   const [hasSavedContent, setHasSavedContent] = useState(false);
 
   // Lesson plan management state
   const [isSavingLessonPlan, setIsSavingLessonPlan] = useState(false);
   const [showSaveConfirmDialog, setShowSaveConfirmDialog] = useState(false);
+  const [showLoadConfirmDialog, setShowLoadConfirmDialog] = useState(false);
+  const [localLessonPlanToLoad, setLocalLessonPlanToLoad] = useState<number | null>(null);
+  const [isLoadingLessonPlan, setIsLoadingLessonPlan] = useState(false);
 
   // Content refinement states
   const [refinementMethod, setRefinementMethod] = useState<'selection' | 'crawling' | 'urls'>('selection');
@@ -154,7 +166,45 @@ function LessonPlan() {
     refetch: refetchTopics,
   } = useQuery({
     queryKey: ['search-topics', searchQuery],
-    queryFn: () => searchTopics(searchQuery, 3),
+    queryFn: async () => {
+      console.log('Fetching topics hierarchy for:', searchQuery);
+      const result = await searchTopics(searchQuery, 3);
+
+      // If the search is successful, parse and store the hierarchy in the Zustand store
+      if (result && isTopicsResponse(result) && result.status === 'success') {
+        try {
+          const topicsString = result.data.topics;
+          const jsonMatch = topicsString.match(/```json\n([\s\S]*?)\n```/);
+
+          if (jsonMatch && jsonMatch[1]) {
+            const parsedTopics: Topic[] = JSON.parse(jsonMatch[1]);
+
+            // Only update the store if we actually got topics
+            if (parsedTopics && Array.isArray(parsedTopics) && parsedTopics.length > 0) {
+              // Store the parsed hierarchy in the Zustand store
+              setTopicsHierarchy(parsedTopics);
+              console.log('Stored topics hierarchy in Zustand store:', parsedTopics);
+
+              // If we don't have a main topic set yet, use the search query
+              if (!mainTopic) {
+                console.log('Setting main topic to search query:', searchQuery);
+                setMainTopic(searchQuery);
+              }
+            } else {
+              console.warn('Parsed topics array is empty or invalid');
+            }
+          } else {
+            console.warn('No JSON match found in topics response');
+          }
+        } catch (error) {
+          console.error("Error parsing topics hierarchy:", error);
+        }
+      } else {
+        console.warn('Topics search response is invalid or unsuccessful');
+      }
+
+      return result;
+    },
     enabled: false,
   });
 
@@ -178,13 +228,13 @@ function LessonPlan() {
     enabled: !!(selectedTopic || selectedSubtopic) && !showRightSidebar && !showEditor,
   });
 
-  // Query for fetching saved topics
+  // Query for fetching saved topics - only enabled when we don't have a lesson plan loaded
   const {
     data: savedTopicsData,
   } = useQuery({
     queryKey: ['saved-topics'],
     queryFn: () => getSavedTopics(),
-    enabled: true, // Fetch on component mount
+    enabled: !currentLessonPlan, // Only fetch when no lesson plan is loaded
   });
 
   const handleSearch = (e: React.FormEvent) => {
@@ -194,38 +244,67 @@ function LessonPlan() {
       const searchTerm = searchQuery.trim();
       console.log('Setting main topic to search query:', searchTerm);
       setMainTopic(searchTerm);
+
+      // Clear any existing selected topics
+      setSelectedTopic(null);
+      setSelectedSubtopic(null);
+
+      // Fetch the hierarchy
+      console.log('Fetching hierarchy for search term:', searchTerm);
       refetchTopics();
     }
   };
 
   // Function to check if there's saved content for a topic
   const checkForSavedContent = useCallback((topicName: string) => {
+    console.log(`Checking for saved content for topic: ${topicName}`);
+
     // First check in the current lesson plan in the store
     if (currentLessonPlan?.topics) {
+      console.log(`Current lesson plan has ${currentLessonPlan.topics.length} topics`);
       const savedTopic = currentLessonPlan.topics.find(
         (topic) => topic.topic === topicName
       );
 
       if (savedTopic && savedTopic.mdxContent) {
+        console.log(`Found saved content for ${topicName} in current lesson plan`);
         setHasSavedContent(true);
         // If there's saved content, use it
         setMdxContent(savedTopic.mdxContent);
         setShowEditor(true);
+
+        // Make sure the right sidebar is visible
+        setShowRightSidebar(true);
+
         return true;
       }
+
+      // If we have a current lesson plan but the topic isn't found or has no content,
+      // we don't need to check the database since the lesson plan should be complete
+      console.log(`No saved content for ${topicName} in current lesson plan`);
+      setHasSavedContent(false);
+      return false;
+    } else {
+      console.log('No current lesson plan or no topics in current lesson plan');
     }
 
-    // If not found in the current lesson plan, check in the database
-    if (savedTopicsData?.topics && Array.isArray(savedTopicsData.topics)) {
+    // Only check the database if we don't have a current lesson plan
+    // This avoids unnecessary API calls when we already have all the data
+    if (!currentLessonPlan && savedTopicsData?.topics && Array.isArray(savedTopicsData.topics)) {
+      console.log(`Checking in database (${savedTopicsData.topics.length} topics)`);
       const savedTopic = savedTopicsData.topics.find(
         (topic) => topic.topic === topicName
       );
 
       if (savedTopic) {
+        console.log(`Found saved content for ${topicName} in database`);
         setHasSavedContent(true);
         // If there's saved content, use it
         setMdxContent(savedTopic.mdxContent);
         setShowEditor(true);
+
+        // Make sure the right sidebar is visible
+        setShowRightSidebar(true);
 
         // Also save to the current lesson plan in the store
         if (savedTopic.mdxContent) {
@@ -239,11 +318,24 @@ function LessonPlan() {
 
         return true;
       }
+    } else if (!currentLessonPlan) {
+      console.log('No saved topics data available from database');
     }
 
+    console.log(`No saved content found for ${topicName}`);
     setHasSavedContent(false);
     return false;
-  }, [currentLessonPlan, savedTopicsData, setHasSavedContent, setMdxContent, setShowEditor, saveMdxToCurrentLesson, selectedSubtopic, mainTopic]);
+  }, [
+    currentLessonPlan,
+    savedTopicsData,
+    setHasSavedContent,
+    setMdxContent,
+    setShowEditor,
+    setShowRightSidebar,
+    saveMdxToCurrentLesson,
+    selectedSubtopic,
+    mainTopic
+  ]);
 
   // Function to save MDX content (only to frontend state management)
   const handleSaveMdx = async () => {
@@ -494,6 +586,228 @@ function LessonPlan() {
 
   // No need for localStorage functions since we're using Zustand with persist middleware
 
+  // Function to reconstruct hierarchy from lesson plan topics
+  const reconstructHierarchyFromTopics = useCallback((topics: SavedLessonTopic[]) => {
+    console.log('Reconstructing hierarchy from lesson plan topics:', topics);
+
+    if (!topics || !Array.isArray(topics) || topics.length === 0) {
+      console.warn('No topics provided to reconstruct hierarchy');
+      return [];
+    }
+
+    // Group topics by parent
+    const topicsByParent: Record<string, SavedLessonTopic[]> = {};
+
+    // First, find all parent topics (where topic === parentTopic or !isSubtopic)
+    const parentTopics = topics.filter(t => !t.isSubtopic || t.topic === t.parentTopic);
+
+    // Then group subtopics by their parent
+    topics.forEach(topic => {
+      if (topic.isSubtopic && topic.parentTopic && topic.parentTopic !== topic.topic) {
+        if (!topicsByParent[topic.parentTopic]) {
+          topicsByParent[topic.parentTopic] = [];
+        }
+        topicsByParent[topic.parentTopic].push(topic);
+      }
+    });
+
+    // Create the hierarchy structure
+    const hierarchy: TopicHierarchy[] = parentTopics.map(parentTopic => {
+      return {
+        topic: parentTopic.topic,
+        subtopics: (topicsByParent[parentTopic.topic] || []).map(st => st.topic)
+      };
+    });
+
+    console.log('Reconstructed hierarchy:', hierarchy);
+    return hierarchy;
+  }, []);
+
+  // Function to load a lesson plan by ID
+  const loadLessonPlanById = useCallback(async (id: number) => {
+    setIsLoadingLessonPlan(true);
+    try {
+      const response = await getLessonPlanById(id);
+
+      // Check if the response is an error
+      if ('error' in response) {
+        throw new Error(response.error);
+      }
+
+      console.log('Successfully fetched lesson plan data:', {
+        id: response.id,
+        name: response.name,
+        mainTopic: response.mainTopic,
+        topicsCount: response.topics?.length || 0
+      });
+
+      // Set the main topic from the lesson plan
+      setMainTopic(response.mainTopic);
+
+      // Set the search query to match the main topic for consistency
+      setSearchQuery(response.mainTopic);
+
+      // Make sure the right sidebar is visible
+      setShowRightSidebar(true);
+      setShowGenerationOptions(true);
+
+      // Set the current lesson plan in the store
+      // This will also reset the unsaved changes flag
+      setCurrentLessonPlan({
+        id: response.id,
+        name: response.name,
+        mainTopic: response.mainTopic,
+        topics: response.topics,
+        createdAt: response.createdAt || undefined,
+        updatedAt: response.updatedAt || undefined
+      });
+
+      // Reconstruct the hierarchy from the loaded topics
+      if (response.topics && response.topics.length > 0) {
+        // Set the search query to match the main topic for consistency
+        setSearchQuery(response.mainTopic);
+
+        // Update the saved topics list to highlight topics with content
+        const savedTopicsList = response.topics
+          .filter(topic => topic.mdxContent && topic.mdxContent.trim() !== '')
+          .map(topic => topic.topic);
+
+        // Update the savedTopics in the store
+        useLessonPlanStore.setState({ savedTopics: savedTopicsList });
+
+        // Reconstruct the hierarchy from the lesson plan topics
+        const reconstructedHierarchy = reconstructHierarchyFromTopics(response.topics);
+
+        // Only update the hierarchy if we successfully reconstructed it
+        if (reconstructedHierarchy && reconstructedHierarchy.length > 0) {
+          console.log('Setting reconstructed hierarchy from lesson plan:', reconstructedHierarchy);
+          setTopicsHierarchy(reconstructedHierarchy);
+        } else {
+          console.warn('Failed to reconstruct hierarchy from lesson plan topics');
+        }
+      }
+
+      // If there are topics, select the first one to display
+      if (response.topics && response.topics.length > 0) {
+        // Find a parent topic (not a subtopic)
+        const parentTopic = response.topics.find(t => !t.isSubtopic);
+
+        if (parentTopic) {
+          console.log('Selecting parent topic:', parentTopic.topic);
+          setSelectedTopic(parentTopic.topic);
+          setSelectedSubtopic(null);
+          setMdxContent(parentTopic.mdxContent || '');
+          setShowEditor(!!parentTopic.mdxContent);
+        } else {
+          // If no parent topic, just select the first one
+          const firstTopic = response.topics[0];
+          console.log('Selecting first topic:', firstTopic.topic, 'isSubtopic:', firstTopic.isSubtopic);
+
+          if (firstTopic.isSubtopic) {
+            setSelectedSubtopic(firstTopic.topic);
+            setSelectedTopic(null);
+          } else {
+            setSelectedTopic(firstTopic.topic);
+            setSelectedSubtopic(null);
+          }
+
+          setMdxContent(firstTopic.mdxContent || '');
+          setShowEditor(!!firstTopic.mdxContent);
+        }
+
+        // Force a UI update by triggering a window resize event
+        setTimeout(() => {
+          window.dispatchEvent(new Event('resize'));
+
+          // We should already have a reconstructed hierarchy from the lesson plan topics,
+          // but if for some reason we don't, trigger a search to fetch it
+          if (!topicsHierarchy || !Array.isArray(topicsHierarchy) || topicsHierarchy.length === 0) {
+            console.log('No hierarchy found after loading lesson plan, fetching hierarchy for:', response.mainTopic);
+            refetchTopics();
+          } else {
+            console.log('Using hierarchy from store after loading lesson plan:', topicsHierarchy);
+          }
+        }, 200);
+      }
+
+      // Show success message
+      toast.success(`Loaded lesson plan: ${response.name}`);
+    } catch (error) {
+      console.error('Error loading lesson plan:', error);
+      toast.error('Failed to load lesson plan');
+    } finally {
+      setIsLoadingLessonPlan(false);
+      setShowLoadConfirmDialog(false);
+    }
+  }, [
+    reconstructHierarchyFromTopics,
+    setTopicsHierarchy,
+    setMainTopic,
+    setSearchQuery,
+    setShowRightSidebar,
+    setShowGenerationOptions,
+    setCurrentLessonPlan,
+    refetchTopics,
+    setMdxContent,
+    setSelectedSubtopic,
+    setSelectedTopic,
+    setShowEditor,
+    topicsHierarchy
+  ]);
+
+  // Function to handle loading a lesson plan when there are unsaved changes
+  const handleLoadLessonPlan = useCallback((id: number) => {
+    if (hasUnsavedChanges) {
+      // If there are unsaved changes, show confirmation dialog
+      setLocalLessonPlanToLoad(id);
+      setShowLoadConfirmDialog(true);
+    } else {
+      // If no unsaved changes, load directly
+      loadLessonPlanById(id);
+    }
+  }, [hasUnsavedChanges, loadLessonPlanById, setLocalLessonPlanToLoad, setShowLoadConfirmDialog]);
+
+  // Handle confirming to discard changes and load the lesson plan
+  const handleDiscardAndLoad = () => {
+    if (localLessonPlanToLoad) {
+      loadLessonPlanById(localLessonPlanToLoad);
+    }
+  };
+
+  // Check for lesson plan to load from the store
+  useEffect(() => {
+    if (lessonPlanToLoad !== null) {
+      console.log(`Found lesson plan to load from store: ${lessonPlanToLoad}`);
+      // Add a small delay to ensure the component is fully mounted
+      setTimeout(() => {
+        handleLoadLessonPlan(lessonPlanToLoad);
+        // Clear the lessonPlanToLoad after handling it
+        setLessonPlanToLoad(null);
+      }, 100);
+    }
+  }, [lessonPlanToLoad, handleLoadLessonPlan, setLessonPlanToLoad]);
+
+  // Handle loading lesson plan when coming from the dashboard
+  useEffect(() => {
+    if (fromDashboard) {
+      if (lessonPlanToLoad !== null) {
+        toast.info('Loading lesson plan from dashboard...');
+        console.log('Loading lesson plan from dashboard with ID:', lessonPlanToLoad);
+
+        // Add a small delay to ensure the component is fully mounted
+        setTimeout(() => {
+          handleLoadLessonPlan(lessonPlanToLoad);
+          // Clear the lessonPlanToLoad after handling it
+          setLessonPlanToLoad(null);
+        }, 200);
+      } else if (state && state.lessonPlanId) {
+        // Check if there's a lesson plan ID in the route state
+        console.log('Found lesson plan ID in route state:', state.lessonPlanId);
+        handleLoadLessonPlan(state.lessonPlanId);
+      }
+    }
+  }, [fromDashboard, lessonPlanToLoad, handleLoadLessonPlan, setLessonPlanToLoad, state]);
+
   // Check for mobile view and handle resize
   useEffect(() => {
     const checkMobileView = () => {
@@ -510,24 +824,53 @@ function LessonPlan() {
     return () => window.removeEventListener('resize', checkMobileView);
   }, []);
 
-  // Update saved topics when data changes
+  // Initial load effect - run once when component mounts
   useEffect(() => {
-    if (savedTopicsData?.topics && Array.isArray(savedTopicsData.topics)) {
-      // Update the saved topics state
-      setSavedTopics(savedTopicsData.topics.map((topic) => ({
-        id: topic.id,
-        topic: topic.topic,
-        mdxContent: topic.mdxContent
-      })));
+    // Check if we have a mainTopic but no hierarchy data or API response
+    if (mainTopic && (!topicsHierarchy || !Array.isArray(topicsHierarchy) || topicsHierarchy.length === 0)) {
+      console.log('Initial load: Fetching hierarchy for main topic:', mainTopic);
 
-      // If a topic is selected, check if it has saved content
-      if (selectedTopic) {
-        checkForSavedContent(selectedTopic);
-      } else if (selectedSubtopic) {
-        checkForSavedContent(selectedSubtopic);
+      // Set search query to match the main topic
+      setSearchQuery(mainTopic);
+
+      // Trigger a search to fetch the hierarchy
+      setTimeout(() => {
+        refetchTopics();
+      }, 100);
+    } else if (Array.isArray(topicsHierarchy) && topicsHierarchy.length > 0) {
+      console.log('Initial load: Using persisted hierarchy from store:', topicsHierarchy);
+
+      // If we have a persisted hierarchy but no selected topic, select the first one
+      if (!selectedTopic && !selectedSubtopic && topicsHierarchy.length > 0) {
+        const firstTopic = topicsHierarchy[0];
+        console.log('Auto-selecting first topic from persisted hierarchy:', firstTopic.topic);
+        handleTopicSelect(firstTopic.topic);
       }
     }
-  }, [savedTopicsData, selectedTopic, selectedSubtopic, checkForSavedContent]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Empty dependency array means this runs once on mount
+
+  // Auto-refetch topics if we have a mainTopic but no hierarchy data
+  useEffect(() => {
+    if (mainTopic && (!topicsHierarchy || !Array.isArray(topicsHierarchy) || topicsHierarchy.length === 0) && !topicsData) {
+      console.log('Auto-refetching topics for:', mainTopic);
+      setSearchQuery(mainTopic);
+      // Add a small delay to ensure the searchQuery is updated
+      setTimeout(() => {
+        refetchTopics();
+      }, 100);
+    }
+  }, [mainTopic, topicsHierarchy, topicsData, setSearchQuery, refetchTopics]);
+
+  // Check for saved content when selected topic changes
+  useEffect(() => {
+    // If a topic is selected, check if it has saved content
+    if (selectedTopic) {
+      checkForSavedContent(selectedTopic);
+    } else if (selectedSubtopic) {
+      checkForSavedContent(selectedSubtopic);
+    }
+  }, [selectedTopic, selectedSubtopic, checkForSavedContent]);
 
   // Handle content changes
   const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -536,11 +879,13 @@ function LessonPlan() {
 
     // If the content has been saved and is now being edited, update the state
     if (hasSavedContent) {
-      // Check if the saved content matches the current content
+      // Check if the content has been modified from the saved version
       const currentTopic = selectedTopic || selectedSubtopic || '';
-      const savedTopic = savedTopics.find(topic => topic.topic === currentTopic);
 
-      if (savedTopic && savedTopic.mdxContent !== newContent) {
+      // Get the saved content from the current lesson plan
+      const savedContent = currentLessonPlan?.topics.find(t => t.topic === currentTopic)?.mdxContent;
+
+      if (savedContent && savedContent !== newContent) {
         // Content has been modified from the saved version
         setHasSavedContent(false);
       }
@@ -949,54 +1294,79 @@ function LessonPlan() {
       // Collect all topics with their MDX content
       const topicsToSave: SavedLessonTopic[] = [];
 
-      // Add the current topic if it has content
+      // First, extract the complete hierarchy from topicsData to preserve ordering
+      let parsedTopics: Topic[] = [];
+      if (topicsData && isTopicsResponse(topicsData) && topicsData.status === 'success') {
+        try {
+          const topicsString = topicsData.data.topics;
+          const jsonMatch = topicsString.match(/```json\n([\s\S]*?)\n```/);
+
+          if (jsonMatch && jsonMatch[1]) {
+            parsedTopics = JSON.parse(jsonMatch[1]);
+          }
+        } catch (error) {
+          console.error("Error parsing topics hierarchy:", error);
+        }
+      }
+
+      // If we have a valid hierarchy, add all topics and subtopics to preserve the complete structure
+      if (parsedTopics.length > 0) {
+        // First, add all parent topics in order
+        parsedTopics.forEach((parentTopic, index) => {
+          // Check if this topic already exists in the current lesson plan
+          const existingTopic = currentLessonPlan?.topics.find(t => t.topic === parentTopic.topic);
+
+          // Add the parent topic
+          topicsToSave.push({
+            topic: parentTopic.topic,
+            mdxContent: existingTopic?.mdxContent || '', // Use existing content or empty string
+            isSubtopic: false,
+            parentTopic: parentTopic.topic, // Parent topic is itself
+            mainTopic: mainTopic,
+            // Add an order field to preserve the hierarchy order
+            order: index
+          });
+
+          // Then add all its subtopics in order
+          if (parentTopic.subtopics && parentTopic.subtopics.length > 0) {
+            parentTopic.subtopics.forEach((subtopic, subIndex) => {
+              // Check if this subtopic already exists in the current lesson plan
+              const existingSubtopic = currentLessonPlan?.topics.find(t => t.topic === subtopic);
+
+              // Add the subtopic
+              topicsToSave.push({
+                topic: subtopic,
+                mdxContent: existingSubtopic?.mdxContent || '', // Use existing content or empty string
+                isSubtopic: true,
+                parentTopic: parentTopic.topic,
+                mainTopic: mainTopic,
+                // Add an order field to preserve the hierarchy order
+                order: index * 100 + subIndex // This ensures subtopics are grouped with their parents
+              });
+            });
+          }
+        });
+      }
+
+      // Now update any topics that have content in the current editor
       if (mdxContent && (selectedTopic || selectedSubtopic)) {
         const currentTopic = selectedTopic || selectedSubtopic || '';
         const isCurrentTopicSubtopic = !!selectedSubtopic;
-
-        // Determine parent topic
-        // If it's a subtopic, we need to find its actual parent topic from the hierarchy
-        // If it's a parent topic, use itself as parent
         let parentTopicValue;
 
+        // Determine the parent topic
         if (isCurrentTopicSubtopic) {
-          // For subtopics, we need to find the parent topic from the hierarchy
-          // This could be a parent topic from the topicsData
-          if (topicsData && isTopicsResponse(topicsData) && topicsData.status === 'success') {
-            try {
-              const topicsString = topicsData.data.topics;
-              const jsonMatch = topicsString.match(/```json\n([\s\S]*?)\n```/);
-
-              if (jsonMatch && jsonMatch[1]) {
-                const parsedTopics: Topic[] = JSON.parse(jsonMatch[1]);
-
-                // Find the parent topic that contains this subtopic
-                const parentTopicObj = parsedTopics.find(topic =>
-                  topic.subtopics && topic.subtopics.includes(currentTopic)
-                );
-
-                if (parentTopicObj) {
-                  parentTopicValue = parentTopicObj.topic;
-                } else {
-                  // If we can't find the parent, use the main topic as fallback
-                  parentTopicValue = mainTopic;
-                }
-              } else {
-                parentTopicValue = mainTopic; // Fallback
-              }
-            } catch (error) {
-              console.error("Error finding parent topic:", error);
-              parentTopicValue = mainTopic; // Fallback
-            }
-          } else {
-            parentTopicValue = mainTopic; // Fallback
-          }
+          // For subtopics, find the parent from the hierarchy
+          const parentTopicObj = parsedTopics.find(topic =>
+            topic.subtopics && topic.subtopics.includes(currentTopic)
+          );
+          parentTopicValue = parentTopicObj ? parentTopicObj.topic : mainTopic;
         } else {
           // For parent topics, the parent is itself
           parentTopicValue = currentTopic;
         }
 
-        // First save to the current lesson in the store to ensure it's up to date
+        // Save to the current lesson in the store
         saveMdxToCurrentLesson(
           currentTopic,
           mdxContent,
@@ -1004,91 +1374,79 @@ function LessonPlan() {
           parentTopicValue
         );
 
-        // Then add it to the topics to save
-        topicsToSave.push({
-          topic: currentTopic,
-          mdxContent,
-          isSubtopic: isCurrentTopicSubtopic,
-          parentTopic: parentTopicValue,
-          mainTopic: mainTopic // Add the main topic (lesson plan name)
-        });
+        // Update the content in the topicsToSave array
+        const topicIndex = topicsToSave.findIndex(t => t.topic === currentTopic);
+        if (topicIndex >= 0) {
+          // Update existing topic in the array
+          topicsToSave[topicIndex].mdxContent = mdxContent;
+        } else {
+          // If not found in the hierarchy (rare case), add it
+          topicsToSave.push({
+            topic: currentTopic,
+            mdxContent,
+            isSubtopic: isCurrentTopicSubtopic,
+            parentTopic: parentTopicValue,
+            mainTopic: mainTopic
+          });
+        }
       }
 
-      // Get all topics from the current lesson plan in the store
+      // Update with any additional content from the current lesson plan
       if (currentLessonPlan && currentLessonPlan.topics) {
         currentLessonPlan.topics.forEach(topic => {
-          // Skip if it's the current topic (already added)
+          // Skip if it's the current topic (already handled)
           if (topic.topic === selectedTopic || topic.topic === selectedSubtopic) {
             return;
           }
 
-          // Check if this topic is already in the list
-          if (!topicsToSave.some(t => t.topic === topic.topic)) {
-            // Ensure parent topic is set correctly
-            let parentTopicValue = topic.parentTopic;
+          // Find if this topic exists in our topicsToSave array
+          const existingIndex = topicsToSave.findIndex(t => t.topic === topic.topic);
 
-            // If no parent topic is set or it needs to be updated
-            if (!parentTopicValue) {
-              if (topic.isSubtopic) {
-                // For subtopics, try to find the parent topic from the hierarchy
-                if (topicsData && isTopicsResponse(topicsData) && topicsData.status === 'success') {
-                  try {
-                    const topicsString = topicsData.data.topics;
-                    const jsonMatch = topicsString.match(/```json\n([\s\S]*?)\n```/);
-
-                    if (jsonMatch && jsonMatch[1]) {
-                      const parsedTopics: Topic[] = JSON.parse(jsonMatch[1]);
-
-                      // Find the parent topic that contains this subtopic
-                      const parentTopicObj = parsedTopics.find(parentTopic =>
-                        parentTopic.subtopics && parentTopic.subtopics.includes(topic.topic)
-                      );
-
-                      if (parentTopicObj) {
-                        parentTopicValue = parentTopicObj.topic;
-                      } else {
-                        // If we can't find the parent, use the main topic as fallback
-                        parentTopicValue = mainTopic;
-                      }
-                    } else {
-                      parentTopicValue = mainTopic; // Fallback
-                    }
-                  } catch (error) {
-                    console.error("Error finding parent topic:", error);
-                    parentTopicValue = mainTopic; // Fallback
-                  }
-                } else {
-                  parentTopicValue = mainTopic; // Fallback
-                }
-              } else {
-                // For parent topics, the parent is itself
-                parentTopicValue = topic.topic;
-              }
-            }
-
+          if (existingIndex >= 0 && topic.mdxContent) {
+            // Update the content for an existing topic
+            topicsToSave[existingIndex].mdxContent = topic.mdxContent;
+          } else if (existingIndex === -1 && topic.mdxContent) {
+            // If not in the hierarchy but has content, add it
             topicsToSave.push({
               topic: topic.topic,
               mdxContent: topic.mdxContent,
               isSubtopic: topic.isSubtopic,
-              parentTopic: parentTopicValue,
-              mainTopic: mainTopic // Add the main topic (lesson plan name)
+              parentTopic: topic.parentTopic || (topic.isSubtopic ? mainTopic : topic.topic),
+              mainTopic: mainTopic
             });
           }
         });
       }
 
+      // Sort the topics by order if available
+      topicsToSave.sort((a, b) => {
+        if (a.order !== undefined && b.order !== undefined) {
+          return a.order - b.order;
+        }
+        return 0;
+      });
+
       if (topicsToSave.length === 0) {
-        toast.error('No content to save');
+        toast.error('No topics to save');
         setIsSavingLessonPlan(false);
         return;
       }
 
       // Create or update the lesson plan
+      // Create a copy of topics without the order property for sending to the backend
+      const cleanedTopics = topicsToSave.map(topic => ({
+        topic: topic.topic,
+        mdxContent: topic.mdxContent,
+        isSubtopic: topic.isSubtopic,
+        parentTopic: topic.parentTopic,
+        mainTopic: topic.mainTopic
+      }));
+
       const lessonPlan = {
         id: currentLessonPlan?.id,
         name: currentLessonPlan?.name || mainTopic || 'Untitled Lesson Plan',
         mainTopic: mainTopic || '',
-        topics: topicsToSave
+        topics: cleanedTopics
       };
 
       const result = await saveLessonPlan(lessonPlan);
@@ -1110,7 +1468,19 @@ function LessonPlan() {
         updatedAt: result.updatedAt || undefined
       };
 
+      // We'll update the lesson plan and then fix the savedTopics
+
+      // Update the lesson plan in the store
       setCurrentLessonPlan(savedLessonPlan);
+
+      // Ensure we're only highlighting topics with actual MDX content
+      // This is needed because setCurrentLessonPlan will reset savedTopics based on the lesson plan
+      const topicsWithContent = savedLessonPlan.topics
+        .filter(topic => topic.mdxContent && topic.mdxContent.trim() !== '')
+        .map(topic => topic.topic);
+
+      // Update the savedTopics in the store to only include topics with content
+      useLessonPlanStore.setState({ savedTopics: topicsWithContent });
 
       // Show different success message based on whether we created or updated
       if (lessonPlan.id) {
@@ -1147,6 +1517,7 @@ function LessonPlan() {
     setCurrentLessonPlan(null);
     setSearchQuery('');
     setHasSavedContent(false);
+    setTopicsHierarchy([]); // Clear the persisted hierarchy
 
     // Reset UI state
     setShowRightSidebar(false);
@@ -1256,6 +1627,45 @@ function LessonPlan() {
         </DialogContent>
       </Dialog>
 
+      {/* Load lesson plan confirmation dialog */}
+      <Dialog open={showLoadConfirmDialog} onOpenChange={setShowLoadConfirmDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Unsaved Changes</DialogTitle>
+            <DialogDescription>
+              You have unsaved changes in your current lesson plan. Would you like to save them before loading another lesson plan?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex justify-end gap-2 mt-4">
+            <Button
+              variant="outline"
+              onClick={handleDiscardAndLoad}
+              disabled={isLoadingLessonPlan}
+            >
+              Discard Changes
+            </Button>
+            <Button
+              onClick={async () => {
+                await handleSaveLessonPlan();
+                if (localLessonPlanToLoad) {
+                  loadLessonPlanById(localLessonPlanToLoad);
+                }
+              }}
+              disabled={isLoadingLessonPlan}
+            >
+              {isLoadingLessonPlan ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                  Loading...
+                </>
+              ) : (
+                'Save and Load'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <div className="flex md:flex-row gap-4 w-full">
         {/* Left sidebar for topic hierarchy */}
       <div className={`${isLeftSidebarCollapsed ? 'w-14' : 'w-full md:w-1/5 lg:w-1/6'} ${isEditorFullscreen || isPreviewFullscreen ? 'hidden md:hidden' : ''} transition-all duration-300`}>
@@ -1305,21 +1715,35 @@ function LessonPlan() {
                   </div>
                 )}
 
-                {topicsData && isTopicsResponse(topicsData) && topicsData.status === 'success' &&
-                 topicsData.data?.topics && (
+                {/* Render hierarchy from either fresh API data or persisted state */}
+                {((topicsData && isTopicsResponse(topicsData) && topicsData.status === 'success' && topicsData.data?.topics) ||
+                  (topicsHierarchy && Array.isArray(topicsHierarchy) && topicsHierarchy.length > 0)) && (
                   <div className="space-y-2">
                     {(() => {
                       try {
-                        // Extract the JSON string from the code block
-                        const topicsString = topicsData.data.topics;
-                        const jsonMatch = topicsString.match(/```json\n([\s\S]*?)\n```/);
+                        // First try to use the hierarchy from the API response
+                        let parsedTopics: Topic[] = [];
 
-                        if (!jsonMatch || !jsonMatch[1]) {
-                          return <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-lg">Error parsing topics data</div>;
+                        if (topicsData && isTopicsResponse(topicsData) && topicsData.status === 'success') {
+                          // Extract the JSON string from the code block
+                          const topicsString = topicsData.data.topics;
+                          const jsonMatch = topicsString.match(/```json\n([\s\S]*?)\n```/);
+
+                          if (jsonMatch && jsonMatch[1]) {
+                            parsedTopics = JSON.parse(jsonMatch[1]);
+                          }
                         }
 
-                        // Parse the JSON string
-                        const parsedTopics: Topic[] = JSON.parse(jsonMatch[1]);
+                        // If we couldn't parse from API response, use the persisted hierarchy
+                        if (parsedTopics.length === 0 && topicsHierarchy && Array.isArray(topicsHierarchy) && topicsHierarchy.length > 0) {
+                          console.log('Using persisted hierarchy from Zustand store:', topicsHierarchy);
+                          parsedTopics = [...topicsHierarchy]; // Create a copy to avoid mutation issues
+                        }
+
+                        // If we still don't have a hierarchy, show an error
+                        if (parsedTopics.length === 0) {
+                          return <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-lg">Error parsing topics data</div>;
+                        }
 
                         return parsedTopics.map((topic: Topic, index: number) => (
                           <div key={index} className="space-y-1 mb-3">
@@ -1327,7 +1751,9 @@ function LessonPlan() {
                               className={`font-medium cursor-pointer p-2 rounded-md transition-colors ${
                                 selectedTopic === topic.topic
                                   ? 'bg-primary/10 text-primary'
-                                  : 'hover:bg-muted'
+                                  : savedTopics.includes(topic.topic)
+                                    ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300'
+                                    : 'hover:bg-muted'
                               }`}
                               onClick={() => handleTopicSelect(topic.topic)}
                             >
@@ -1341,7 +1767,9 @@ function LessonPlan() {
                                     className={`text-sm cursor-pointer p-1.5 rounded-md transition-colors ${
                                       selectedSubtopic === subtopic
                                         ? 'bg-secondary/50 text-secondary-foreground'
-                                        : 'hover:bg-muted'
+                                        : savedTopics.includes(subtopic)
+                                          ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300'
+                                          : 'hover:bg-muted'
                                     }`}
                                     onClick={() => handleSubtopicSelect(subtopic, topic.topic)}
                                   >
@@ -1360,7 +1788,7 @@ function LessonPlan() {
                   </div>
                 )}
 
-                {!topicsData && (
+                {!topicsData && (!topicsHierarchy || topicsHierarchy.length === 0) && (
                   <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
                     <Search className="h-10 w-10 mb-4 opacity-20" />
                     <p className="text-center text-sm">Search for a topic to begin</p>

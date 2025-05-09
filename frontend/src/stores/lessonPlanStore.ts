@@ -14,6 +14,7 @@ export interface SavedLessonTopic {
   isSubtopic: boolean;
   parentTopic?: string;
   mainTopic?: string; // The main topic (lesson plan name)
+  order?: number; // Optional order field to preserve hierarchy ordering
 }
 
 // Define the interface for a complete lesson plan
@@ -24,6 +25,12 @@ export interface LessonPlan {
   topics: SavedLessonTopic[];
   createdAt?: string;
   updatedAt?: string;
+}
+
+// Define interface for topic hierarchy
+export interface TopicHierarchy {
+  topic: string;
+  subtopics: string[];
 }
 
 // Define the interface for the lesson plan state
@@ -44,7 +51,10 @@ export interface LessonPlanState {
   urlInputs: UrlInput[];
   currentLessonPlan: LessonPlan | null;
   savedTopicsMap: Record<string, string>; // Map of topic name to MDX content
+  savedTopics: string[]; // List of topic names that have been saved
   hasUnsavedChanges: boolean;
+  lessonPlanToLoad: number | null; // ID of the lesson plan to load
+  topicsHierarchy: TopicHierarchy[]; // Store the topics hierarchy
 
   // Actions
   setSearchQuery: (query: string) => void;
@@ -64,6 +74,8 @@ export interface LessonPlanState {
   setCurrentLessonPlan: (lessonPlan: LessonPlan | null) => void;
   saveMdxToCurrentLesson: (topic: string, mdxContent: string, isSubtopic: boolean, parentTopic?: string) => void;
   setHasUnsavedChanges: (hasChanges: boolean) => void;
+  setLessonPlanToLoad: (id: number | null) => void;
+  setTopicsHierarchy: (hierarchy: TopicHierarchy[]) => void; // Add action to set the hierarchy
 
   // Reset state
   resetState: () => void;
@@ -90,36 +102,43 @@ export const useLessonPlanStore = create<LessonPlanState>()(
       urlInputs: [{ value: '', isValid: false }],
       currentLessonPlan: null,
       savedTopicsMap: {},
+      savedTopics: [],
       hasUnsavedChanges: false,
+      lessonPlanToLoad: null,
+      topicsHierarchy: [] as TopicHierarchy[],
 
       // Actions
-      setSearchQuery: (query) => set({ searchQuery: query }),
-      setSelectedTopic: (topic) => set({ selectedTopic: topic }),
-      setSelectedSubtopic: (subtopic) => set({ selectedSubtopic: subtopic }),
-      setMainTopic: (topic) => set({ mainTopic: topic }),
-      setShowRightSidebar: (show) => set({ showRightSidebar: show }),
+      setSearchQuery: (query) => set((state) => ({ searchQuery: query })),
+      setSelectedTopic: (topic) => set((state) => ({ selectedTopic: topic })),
+      setSelectedSubtopic: (subtopic) => set((state) => ({ selectedSubtopic: subtopic })),
+      setMainTopic: (topic) => set((state) => ({ mainTopic: topic })),
+      setShowRightSidebar: (show) => set((state) => ({ showRightSidebar: show })),
       setMdxContent: (content) => {
         set((state) => ({
           mdxContent: content,
           hasUnsavedChanges: state.currentLessonPlan !== null
         }));
       },
-      setShowEditor: (show) => set({ showEditor: show }),
-      setGenerationMethod: (method) => set({ generationMethod: method }),
-      setLastUsedGenerationMethod: (method) => set({ lastUsedGenerationMethod: method }),
-      setShowGenerationOptions: (show) => set({ showGenerationOptions: show }),
-      setEditorViewMode: (mode) => set({ editorViewMode: mode }),
-      setIsLeftSidebarCollapsed: (collapsed) => set({ isLeftSidebarCollapsed: collapsed }),
-      setIsRightSidebarCollapsed: (collapsed) => set({ isRightSidebarCollapsed: collapsed }),
-      setUrlInputs: (inputs) => set({ urlInputs: inputs }),
-      setCurrentLessonPlan: (lessonPlan) => set({
+      setShowEditor: (show) => set((state) => ({ showEditor: show })),
+      setGenerationMethod: (method) => set((state) => ({ generationMethod: method })),
+      setLastUsedGenerationMethod: (method) => set((state) => ({ lastUsedGenerationMethod: method })),
+      setShowGenerationOptions: (show) => set((state) => ({ showGenerationOptions: show })),
+      setEditorViewMode: (mode) => set((state) => ({ editorViewMode: mode })),
+      setIsLeftSidebarCollapsed: (collapsed) => set((state) => ({ isLeftSidebarCollapsed: collapsed })),
+      setIsRightSidebarCollapsed: (collapsed) => set((state) => ({ isRightSidebarCollapsed: collapsed })),
+      setUrlInputs: (inputs) => set((state) => ({ urlInputs: inputs })),
+      setCurrentLessonPlan: (lessonPlan) => set((state) => ({
         currentLessonPlan: lessonPlan,
-        hasUnsavedChanges: false,
+        hasUnsavedChanges: false, // Always reset unsaved changes when setting a new lesson plan
         savedTopicsMap: lessonPlan ? lessonPlan.topics.reduce((acc, topic) => {
           acc[topic.topic] = topic.mdxContent;
           return acc;
-        }, {} as Record<string, string>) : {}
-      }),
+        }, {} as Record<string, string>) : {},
+        // Initialize savedTopics from the lesson plan topics that have MDX content
+        savedTopics: lessonPlan ? lessonPlan.topics
+          .filter(topic => topic.mdxContent && topic.mdxContent.trim() !== '')
+          .map(topic => topic.topic) : []
+      })),
       saveMdxToCurrentLesson: (topic, mdxContent, isSubtopic, parentTopic) => {
         set((state) => {
           // Ensure we have a main topic
@@ -145,6 +164,8 @@ export const useLessonPlanStore = create<LessonPlanState>()(
                 }]
               },
               savedTopicsMap: { [topic]: mdxContent },
+              // Only add to savedTopics if it has actual content
+              savedTopics: mdxContent && mdxContent.trim() !== '' ? [topic] : [],
               hasUnsavedChanges: true
             };
           }
@@ -178,6 +199,19 @@ export const useLessonPlanStore = create<LessonPlanState>()(
             ];
           }
 
+          // Add the topic to savedTopics if it has content and is not already there
+          let updatedSavedTopics = state.savedTopics;
+
+          // Only add to savedTopics if it has actual content
+          if (mdxContent && mdxContent.trim() !== '') {
+            updatedSavedTopics = state.savedTopics.includes(topic)
+              ? state.savedTopics
+              : [...state.savedTopics, topic];
+          } else {
+            // If there's no content, remove from savedTopics if it exists
+            updatedSavedTopics = state.savedTopics.filter(t => t !== topic);
+          }
+
           return {
             currentLessonPlan: {
               ...state.currentLessonPlan,
@@ -187,11 +221,18 @@ export const useLessonPlanStore = create<LessonPlanState>()(
               ...state.savedTopicsMap,
               [topic]: mdxContent
             },
+            savedTopics: updatedSavedTopics,
             hasUnsavedChanges: true
           };
         });
       },
-      setHasUnsavedChanges: (hasChanges) => set({ hasUnsavedChanges }),
+      setHasUnsavedChanges: (hasChanges) => set((state) => ({ hasUnsavedChanges: hasChanges })),
+
+      // Set the lesson plan to load
+      setLessonPlanToLoad: (id) => set((state) => ({ lessonPlanToLoad: id })),
+
+      // Set the topics hierarchy
+      setTopicsHierarchy: (hierarchy) => set((state) => ({ topicsHierarchy: hierarchy })),
 
       // Reset state
       resetState: () => set({
@@ -211,11 +252,28 @@ export const useLessonPlanStore = create<LessonPlanState>()(
         urlInputs: [{ value: '', isValid: false }],
         currentLessonPlan: null,
         savedTopicsMap: {},
+        savedTopics: [],
         hasUnsavedChanges: false,
+        lessonPlanToLoad: null,
+        topicsHierarchy: [] as TopicHierarchy[],
       }),
     }),
     {
       name: 'lesson-plan-storage', // name of the item in storage
+      partialize: (state) => ({
+        // Only persist these specific parts of the state
+        searchQuery: state.searchQuery,
+        mainTopic: state.mainTopic,
+        topicsHierarchy: state.topicsHierarchy,
+        currentLessonPlan: state.currentLessonPlan,
+        savedTopics: state.savedTopics,
+        savedTopicsMap: state.savedTopicsMap,
+        mdxContent: state.mdxContent,
+        selectedTopic: state.selectedTopic,
+        selectedSubtopic: state.selectedSubtopic,
+        showEditor: state.showEditor,
+        hasUnsavedChanges: state.hasUnsavedChanges,
+      }),
     }
   )
 );
