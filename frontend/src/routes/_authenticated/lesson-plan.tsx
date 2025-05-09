@@ -23,9 +23,10 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { MDXRenderer } from '@/components/mdxRenderer';
-import { Loader2, Search, X, Maximize2, Minimize2, ChevronLeft, ChevronRight, Link, Save, FilePlus, Plus, Trash2, PlusCircle } from 'lucide-react';
+import { Loader2, Search, X, Maximize2, Minimize2, ChevronLeft, ChevronRight, Link, Save, FilePlus, Plus, Trash2, PlusCircle, GripVertical } from 'lucide-react';
 import { Textarea } from '@/components/ui/textarea';
 import { useLessonPlanStore, UrlInput, SavedLessonTopic } from '@/stores/lessonPlanStore';
+import { DraggableTopicList } from '@/components/DraggableTopicList';
 import {
   Dialog,
   DialogContent,
@@ -1541,6 +1542,58 @@ function LessonPlan() {
     setShowDeleteTopicDialog(true);
   };
 
+  // Function to handle reordering of main topics
+  const handleTopicsReordered = (reorderedTopics: Topic[]) => {
+    console.log('handleTopicsReordered called with:', reorderedTopics);
+    console.log('Current topicsHierarchy:', topicsHierarchy);
+
+    // Update the topics hierarchy in the store
+    setTopicsHierarchy(reorderedTopics);
+
+    // Force a re-render by updating a state variable
+    // This is a workaround for the UI not updating
+    setTimeout(() => {
+      // Force a re-render by updating the state
+      const updatedTopics = [...reorderedTopics];
+      setTopicsHierarchy(updatedTopics);
+      console.log('Topics hierarchy updated:', updatedTopics);
+    }, 100);
+
+    toast.success('Topics reordered successfully');
+  };
+
+  // Function to handle reordering of subtopics
+  const handleSubtopicsReordered = (parentTopic: string, reorderedSubtopics: string[]) => {
+    console.log('handleSubtopicsReordered called with:', parentTopic, reorderedSubtopics);
+    console.log('Current topicsHierarchy:', topicsHierarchy);
+
+    // Find the parent topic in the hierarchy
+    const updatedHierarchy = [...topicsHierarchy];
+    const parentTopicIndex = updatedHierarchy.findIndex(t => t.topic === parentTopic);
+
+    if (parentTopicIndex === -1) {
+      toast.error('Parent topic not found');
+      return;
+    }
+
+    // Update the subtopics array for the parent topic
+    updatedHierarchy[parentTopicIndex].subtopics = reorderedSubtopics;
+
+    // Update the hierarchy in the store
+    setTopicsHierarchy(updatedHierarchy);
+
+    // Force a re-render by updating a state variable
+    // This is a workaround for the UI not updating
+    setTimeout(() => {
+      // Force a re-render by updating the state
+      const updatedTopics = [...updatedHierarchy];
+      setTopicsHierarchy(updatedTopics);
+      console.log('Subtopics hierarchy updated:', updatedTopics);
+    }, 100);
+
+    toast.success('Subtopics reordered successfully');
+  };
+
   // Function to add a new main topic
   const handleAddTopic = () => {
     if (!newTopicName.trim()) {
@@ -1703,9 +1756,17 @@ function LessonPlan() {
       // Collect all topics with their MDX content
       const topicsToSave: SavedLessonTopic[] = [];
 
-      // First, extract the complete hierarchy from topicsData to preserve ordering
+      // First, extract the complete hierarchy from topicsHierarchy state to preserve ordering
+      // This ensures we use the most up-to-date hierarchy including any user modifications
       let parsedTopics: Topic[] = [];
-      if (topicsData && isTopicsResponse(topicsData) && topicsData.status === 'success') {
+
+      // Use the topicsHierarchy from the store as the primary source of hierarchy
+      if (topicsHierarchy && Array.isArray(topicsHierarchy) && topicsHierarchy.length > 0) {
+        console.log('Using topicsHierarchy from store for saving:', topicsHierarchy);
+        parsedTopics = [...topicsHierarchy]; // Create a copy to avoid mutation issues
+      }
+      // Fallback to topicsData if topicsHierarchy is not available
+      else if (topicsData && isTopicsResponse(topicsData) && topicsData.status === 'success') {
         try {
           const topicsString = topicsData.data.topics;
           const jsonMatch = topicsString.match(/```json\n([\s\S]*?)\n```/);
@@ -1880,14 +1941,17 @@ function LessonPlan() {
       // We'll update the lesson plan and then fix the savedTopics
 
       // Update the lesson plan in the store
+      // This will also update the topicsHierarchy in the store based on the saved lesson plan
       setCurrentLessonPlan(savedLessonPlan);
 
-      // Include all topics in savedTopics, not just those with content
-      // This ensures the entire hierarchy is preserved
-      const allTopics = savedLessonPlan.topics.map(topic => topic.topic);
+      // Only include topics with actual MDX content in savedTopics
+      // This ensures only topics with content are highlighted as saved (green)
+      const topicsWithContent = savedLessonPlan.topics
+        .filter(topic => topic.mdxContent && topic.mdxContent.trim() !== '')
+        .map(topic => topic.topic);
 
-      // Update the savedTopics in the store to include all topics
-      useLessonPlanStore.setState({ savedTopics: allTopics });
+      // Update the savedTopics in the store to only include topics with content
+      useLessonPlanStore.setState({ savedTopics: topicsWithContent });
 
       // Show different success message based on whether we created or updated
       if (lessonPlan.id) {
@@ -2198,88 +2262,26 @@ function LessonPlan() {
                           return <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-lg">Error parsing topics data</div>;
                         }
 
-                        return parsedTopics.map((topic: Topic, index: number) => (
-                          <div key={index} className="space-y-1 mb-3">
-                            <div className="flex items-center justify-between">
-                              <div
-                                className={`flex-1 font-medium cursor-pointer p-2 rounded-md transition-colors ${
-                                  selectedTopic === topic.topic
-                                    ? 'bg-primary/10 text-primary'
-                                    : savedTopics.includes(topic.topic) && currentLessonPlan?.topics.find(t => t.topic === topic.topic && t.mdxContent && t.mdxContent.trim() !== '')
-                                      ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300'
-                                      : 'hover:bg-muted'
-                                }`}
-                                onClick={() => handleTopicSelect(topic.topic)}
-                              >
-                                {topic.topic}
-                              </div>
-                              {!isReadOnly && (
-                                <div className="flex space-x-1 pr-1">
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      openAddSubtopicDialog(topic.topic);
-                                    }}
-                                    className="h-6 w-6 p-0 hover:bg-muted"
-                                    title="Add subtopic"
-                                  >
-                                    <PlusCircle className="h-3.5 w-3.5" />
-                                  </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      openDeleteTopicDialog(topic.topic, false);
-                                    }}
-                                    className="h-6 w-6 p-0 hover:bg-destructive/10 hover:text-destructive"
-                                    title="Delete topic"
-                                  >
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                  </Button>
-                                </div>
-                              )}
-                            </div>
-                            {topic.subtopics && topic.subtopics.length > 0 && (
-                              <div className="pl-4 space-y-1 mt-1">
-                                {topic.subtopics.map((subtopic, subIndex) => (
-                                  <div key={subIndex} className="flex items-center justify-between">
-                                    <div
-                                      className={`flex-1 text-sm cursor-pointer p-1.5 rounded-md transition-colors ${
-                                        selectedSubtopic === subtopic
-                                          ? 'bg-secondary/50 text-secondary-foreground'
-                                          : savedTopics.includes(subtopic) && currentLessonPlan?.topics.find(t => t.topic === subtopic && t.mdxContent && t.mdxContent.trim() !== '')
-                                            ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300'
-                                            : 'hover:bg-muted'
-                                      }`}
-                                      onClick={() => handleSubtopicSelect(subtopic, topic.topic)}
-                                    >
-                                      {subtopic}
-                                    </div>
-                                    {!isReadOnly && (
-                                      <div className="flex pr-1">
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            openDeleteTopicDialog(subtopic, true, topic.topic);
-                                          }}
-                                          className="h-5 w-5 p-0 hover:bg-destructive/10 hover:text-destructive"
-                                          title="Delete subtopic"
-                                        >
-                                          <Trash2 className="h-3 w-3" />
-                                        </Button>
-                                      </div>
-                                    )}
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        ));
+                        // Use the topicsHierarchy from the store if it's available and valid
+                        // This ensures we're always using the latest state
+                        const topicsToRender = topicsHierarchy && topicsHierarchy.length > 0 ? topicsHierarchy : parsedTopics;
+
+                        console.log('Rendering topics hierarchy:', topicsToRender);
+
+                        return (
+                          <DraggableTopicList
+                            topics={topicsToRender}
+                            savedTopics={savedTopics}
+                            selectedTopic={selectedTopic}
+                            selectedSubtopic={selectedSubtopic}
+                            isReadOnly={isReadOnly}
+                            onTopicSelect={handleTopicSelect}
+                            onSubtopicSelect={handleSubtopicSelect}
+                            onAddSubtopic={openAddSubtopicDialog}
+                            onDeleteTopic={openDeleteTopicDialog}
+                            onTopicsReordered={handleTopicsReordered}
+                          />
+                        );
                       } catch (error) {
                         console.error("Error parsing topics:", error);
                         return <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-lg">Error parsing topics data</div>;
