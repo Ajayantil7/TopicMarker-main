@@ -1,4 +1,4 @@
-import { text, pgTable, serial, index, timestamp, jsonb } from "drizzle-orm/pg-core";
+import { text, pgTable, serial, index, timestamp, jsonb, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema, createSelectSchema } from 'drizzle-zod';
 import { z } from "zod";
 
@@ -25,6 +25,7 @@ export const lessonPlans = pgTable(
       parentTopic?: string;
       mainTopic?: string;
     }[]>(),
+    isPublic: boolean("is_public").default(false),
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow()
   },
@@ -40,7 +41,8 @@ export const lessonPlans = pgTable(
 export const insertLessonPlanSchema = createInsertSchema(lessonPlans, {
   name: z.string().min(1, { message: "Lesson plan name must not be empty" }),
   mainTopic: z.string().min(1, { message: "Main topic must not be empty" }),
-  topics: z.array(savedLessonTopicSchema)
+  topics: z.array(savedLessonTopicSchema),
+  isPublic: z.boolean().default(false)
 });
 
 // Schema for selecting a lesson plan - can be used to validate API responses

@@ -23,6 +23,7 @@ export interface LessonPlan {
   name: string;
   mainTopic: string;
   topics: SavedLessonTopic[];
+  isPublic?: boolean;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -55,6 +56,10 @@ export interface LessonPlanState {
   hasUnsavedChanges: boolean;
   lessonPlanToLoad: number | null; // ID of the lesson plan to load
   topicsHierarchy: TopicHierarchy[]; // Store the topics hierarchy
+  isReadOnly: boolean; // Flag to indicate if the lesson plan is in read-only mode
+  isLoadingPublicLesson: boolean; // Flag to indicate if we're loading a public lesson
+  usingSavedHierarchy: boolean; // Flag to indicate we're using a saved hierarchy
+  hasValidHierarchy: boolean; // Flag to indicate we have a valid hierarchy
 
   // Actions
   setSearchQuery: (query: string) => void;
@@ -76,6 +81,9 @@ export interface LessonPlanState {
   setHasUnsavedChanges: (hasChanges: boolean) => void;
   setLessonPlanToLoad: (id: number | null) => void;
   setTopicsHierarchy: (hierarchy: TopicHierarchy[]) => void; // Add action to set the hierarchy
+  toggleLessonPlanPublicStatus: (isPublic: boolean) => void; // Toggle public status of current lesson plan
+  setIsReadOnly: (isReadOnly: boolean) => void; // Set read-only mode
+  setIsLoadingPublicLesson: (isLoadingPublicLesson: boolean) => void; // Set loading public lesson flag
 
   // Reset state
   resetState: () => void;
@@ -106,6 +114,10 @@ export const useLessonPlanStore = create<LessonPlanState>()(
       hasUnsavedChanges: false,
       lessonPlanToLoad: null,
       topicsHierarchy: [] as TopicHierarchy[],
+      isReadOnly: false,
+      isLoadingPublicLesson: false,
+      usingSavedHierarchy: false,
+      hasValidHierarchy: false,
 
       // Actions
       setSearchQuery: (query) => set((state) => ({ searchQuery: query })),
@@ -234,6 +246,25 @@ export const useLessonPlanStore = create<LessonPlanState>()(
       // Set the topics hierarchy
       setTopicsHierarchy: (hierarchy) => set((state) => ({ topicsHierarchy: hierarchy })),
 
+      // Toggle the public status of the current lesson plan
+      toggleLessonPlanPublicStatus: (isPublic) => set((state) => {
+        if (!state.currentLessonPlan) return state;
+
+        return {
+          currentLessonPlan: {
+            ...state.currentLessonPlan,
+            isPublic
+          },
+          hasUnsavedChanges: true
+        };
+      }),
+
+      // Set read-only mode
+      setIsReadOnly: (isReadOnly) => set((state) => ({ isReadOnly })),
+
+      // Set loading public lesson flag
+      setIsLoadingPublicLesson: (isLoadingPublicLesson) => set((state) => ({ isLoadingPublicLesson })),
+
       // Reset state
       resetState: () => set({
         searchQuery: '',
@@ -256,6 +287,10 @@ export const useLessonPlanStore = create<LessonPlanState>()(
         hasUnsavedChanges: false,
         lessonPlanToLoad: null,
         topicsHierarchy: [] as TopicHierarchy[],
+        isReadOnly: false,
+        isLoadingPublicLesson: false,
+        usingSavedHierarchy: false,
+        hasValidHierarchy: false,
       }),
     }),
     {
@@ -273,6 +308,10 @@ export const useLessonPlanStore = create<LessonPlanState>()(
         selectedSubtopic: state.selectedSubtopic,
         showEditor: state.showEditor,
         hasUnsavedChanges: state.hasUnsavedChanges,
+        isReadOnly: state.isReadOnly,
+        isLoadingPublicLesson: state.isLoadingPublicLesson,
+        usingSavedHierarchy: state.usingSavedHierarchy,
+        hasValidHierarchy: state.hasValidHierarchy,
       }),
     }
   )

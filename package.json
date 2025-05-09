@@ -19,6 +19,8 @@
   "dependencies": {
     "@hono/zod-validator": "^0.1.11",
     "@kinde-oss/kinde-typescript-sdk": "^2.6.2",
+    "@radix-ui/react-switch": "^1.2.4",
+    "class-variance-authority": "^0.7.1",
     "drizzle-orm": "^0.29.4",
     "drizzle-zod": "^0.5.1",
     "hono": "^3.12.9",

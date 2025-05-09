@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { useAuth } from '@/lib/auth-context';
-import { api, getLessonPlans, deleteLessonPlan } from '@/lib/api';
+import { api, getLessonPlans, deleteLessonPlan, saveLessonPlan, LessonPlanResponse } from '@/lib/api';
 import { useLessonPlanStore } from '@/stores/lessonPlanStore';
 import { Input } from '@/components/ui/input';
 import {
@@ -17,6 +17,8 @@ import {
 } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 import {
   Dialog,
   DialogContent,
@@ -26,7 +28,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  BarChart,
   FileText,
   BookOpen,
   Clock,
@@ -35,9 +36,10 @@ import {
   ArrowRight,
   Loader2,
   BookMarked,
-  Bookmark,
   Trash2,
   Search,
+  Globe,
+  Lock,
 } from 'lucide-react';
 
 export const Route = createFileRoute('/_authenticated/dashboard')({
@@ -74,8 +76,6 @@ function Dashboard() {
 
   // Fetch user's saved topics
   const {
-    data: topics,
-    isLoading: isTopicsLoading,
     error: topicsError,
   } = useQuery({
     queryKey: ['user-topics'],
@@ -115,7 +115,6 @@ function Dashboard() {
   }, [topicsError, lessonPlansError]);
 
   // Calculate statistics
-  const totalTopics = topics?.length || 0;
   const lessonPlans = lessonPlansData?.lessonPlans || [];
   const totalLessonPlans = lessonPlans.length;
 
@@ -132,14 +131,9 @@ function Dashboard() {
   // Get the first 5 lesson plans for display
   const displayedLessonPlans = filteredLessonPlans.slice(0, 5);
 
-  const topicsByDifficulty = {
-    Beginner: topics?.filter(topic => topic.difficulty === 'Beginner').length || 0,
-    Intermediate: topics?.filter(topic => topic.difficulty === 'Intermediate').length || 0,
-    Advanced: topics?.filter(topic => topic.difficulty === 'Advanced').length || 0,
-  };
-
   // Format date for display
-  const formatDate = (dateString: string) => {
+  const formatDate = (dateString: string | null) => {
+    if (!dateString) return 'Unknown date';
     return new Date(dateString).toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'short',
@@ -180,14 +174,33 @@ function Dashboard() {
     // Store the lesson plan ID in the store
     setLessonPlanToLoad(lessonPlanId);
 
-    // Navigate to the lesson plan page with both fromDashboard flag and lessonPlanId
-    navigate({
-      to: '/lesson-plan',
-      state: {
-        fromDashboard: true,
-        lessonPlanId: lessonPlanId
-      }
-    });
+    // Navigate to the lesson plan page
+    navigate({ to: '/lesson-plan' });
+  };
+
+  // Handle toggling the public status of a lesson plan
+  const handleTogglePublicStatus = async (lessonPlan: LessonPlanResponse, isPublic: boolean) => {
+    try {
+      // Create a copy of the lesson plan with the updated isPublic status
+      const updatedLessonPlan = {
+        id: lessonPlan.id,
+        name: lessonPlan.name,
+        mainTopic: lessonPlan.mainTopic,
+        topics: lessonPlan.topics,
+        isPublic
+      };
+
+      // Save the updated lesson plan
+      await saveLessonPlan(updatedLessonPlan);
+
+      // Invalidate the lesson plans query to refresh the list
+      queryClient.invalidateQueries({ queryKey: ['user-lesson-plans'] });
+
+      toast.success(`Lesson plan ${isPublic ? 'published' : 'unpublished'} successfully`);
+    } catch (error) {
+      console.error('Error updating lesson plan public status:', error);
+      toast.error(`Failed to ${isPublic ? 'publish' : 'unpublish'} lesson plan`);
+    }
   };
 
   if (isAuthLoading) {
@@ -242,7 +255,7 @@ function Dashboard() {
 
       {/* Quick Actions */}
       <h2 className="text-xl font-semibold mb-4">Quick Actions</h2>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <Button asChild variant="outline" className="h-auto py-6 justify-start">
           <Link to="/mdx" className="flex flex-col items-start">
             <div className="flex items-center w-full">
@@ -262,6 +275,17 @@ function Dashboard() {
               <ArrowRight className="h-4 w-4 ml-auto" />
             </div>
             <span className="text-sm text-muted-foreground mt-1">Generate lesson plans with AI</span>
+          </Link>
+        </Button>
+
+        <Button asChild variant="outline" className="h-auto py-6 justify-start">
+          <Link to="/public-lessons" className="flex flex-col items-start">
+            <div className="flex items-center w-full">
+              <Globe className="h-5 w-5 mr-2" />
+              <span className="font-medium">Public Lessons</span>
+              <ArrowRight className="h-4 w-4 ml-auto" />
+            </div>
+            <span className="text-sm text-muted-foreground mt-1">Browse community lesson plans</span>
           </Link>
         </Button>
 
@@ -321,6 +345,28 @@ function Dashboard() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
+                    <div className="flex items-center mr-2">
+                      <div className="flex items-center space-x-2">
+                        <Switch
+                          id={`public-toggle-${plan.id}`}
+                          checked={!!plan.isPublic}
+                          onCheckedChange={(checked: boolean) => handleTogglePublicStatus(plan as LessonPlanResponse, checked)}
+                        />
+                        <Label htmlFor={`public-toggle-${plan.id}`} className="text-sm cursor-pointer">
+                          {plan.isPublic ? (
+                            <span className="flex items-center text-green-600">
+                              <Globe className="h-3 w-3 mr-1" />
+                              Public
+                            </span>
+                          ) : (
+                            <span className="flex items-center text-muted-foreground">
+                              <Lock className="h-3 w-3 mr-1" />
+                              Private
+                            </span>
+                          )}
+                        </Label>
+                      </div>
+                    </div>
                     <Button
                       size="sm"
                       variant="ghost"

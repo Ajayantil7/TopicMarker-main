@@ -13,14 +13,16 @@ import {
   refineWithUrlsRaw,
   getSavedTopics,
   saveLessonPlan,
-  getLessonPlanById
+  getLessonPlanById,
+  getPublicLessonPlanById
 } from '@/lib/api';
+import { useAuth } from '@/lib/auth-context';
 import { stripFrontmatter } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { MDXRenderer } from '@/components/mdxRenderer';
-import { Loader2, Search, X, Maximize2, Minimize2, ChevronLeft, ChevronRight, Link, Save, FilePlus } from 'lucide-react';
+import { Loader2, Search, X, Maximize2, Minimize2, ChevronLeft, ChevronRight, Link, Save, FilePlus, XCircle } from 'lucide-react';
 import { Textarea } from '@/components/ui/textarea';
 import { useLessonPlanStore, UrlInput, SavedLessonTopic } from '@/stores/lessonPlanStore';
 import {
@@ -106,6 +108,9 @@ function LessonPlan() {
   const { state } = Route.useRouteContext();
   const fromDashboard = state?.fromDashboard === true;
 
+  // Get current user from auth context
+  const { user } = useAuth();
+
   // Get state and actions from Zustand store
   const {
     searchQuery, setSearchQuery,
@@ -128,6 +133,7 @@ function LessonPlan() {
     hasUnsavedChanges, setHasUnsavedChanges,
     lessonPlanToLoad, setLessonPlanToLoad,
     topicsHierarchy, setTopicsHierarchy, // Add these to access and update the topics hierarchy
+    isReadOnly, setIsReadOnly, // Add these to access and update the read-only flag
     resetState
   } = useLessonPlanStore();
 
@@ -609,7 +615,41 @@ function LessonPlan() {
     const topicsByParent: Record<string, SavedLessonTopic[]> = {};
 
     // First, find all parent topics (where topic === parentTopic or !isSubtopic)
-    const parentTopics = topics.filter(t => !t.isSubtopic || t.topic === t.parentTopic);
+    let parentTopics = topics.filter(t => !t.isSubtopic || t.topic === t.parentTopic);
+
+    // If we don't have any parent topics but have topics, try to infer parent topics
+    if (parentTopics.length === 0 && topics.length > 0) {
+      console.log('No explicit parent topics found, trying to infer from parentTopic field');
+
+      // Get unique parent topic names from the parentTopic field
+      const uniqueParentTopicNames = new Set<string>();
+      topics.forEach(topic => {
+        if (topic.parentTopic) {
+          uniqueParentTopicNames.add(topic.parentTopic);
+        }
+      });
+
+      console.log('Inferred parent topics:', Array.from(uniqueParentTopicNames));
+
+      // For each unique parent topic name, check if it exists as a topic
+      // If not, create a synthetic parent topic
+      uniqueParentTopicNames.forEach(parentTopicName => {
+        const existingTopic = topics.find(t => t.topic === parentTopicName);
+        if (!existingTopic) {
+          console.log(`Creating synthetic parent topic for: ${parentTopicName}`);
+          parentTopics.push({
+            topic: parentTopicName,
+            mdxContent: '',
+            isSubtopic: false,
+            parentTopic: parentTopicName,
+            mainTopic: topics[0]?.mainTopic || null
+          });
+        } else if (!parentTopics.includes(existingTopic)) {
+          console.log(`Adding existing topic as parent: ${parentTopicName}`);
+          parentTopics.push(existingTopic);
+        }
+      });
+    }
 
     // Then group subtopics by their parent
     topics.forEach(topic => {
@@ -620,6 +660,12 @@ function LessonPlan() {
         topicsByParent[topic.parentTopic].push(topic);
       }
     });
+
+    // If we still don't have any parent topics, use all topics as parent topics
+    if (parentTopics.length === 0) {
+      console.log('No parent topics found, using all topics as parent topics');
+      parentTopics = topics;
+    }
 
     // Create the hierarchy structure
     const hierarchy: TopicHierarchy[] = parentTopics.map(parentTopic => {
@@ -634,13 +680,32 @@ function LessonPlan() {
   }, []);
 
   // Function to load a lesson plan by ID
-  const loadLessonPlanById = useCallback(async (id: number) => {
+  const loadLessonPlanById = useCallback(async (id: number, isPublic = false) => {
     setIsLoadingLessonPlan(true);
     try {
-      const response = await getLessonPlanById(id);
+      console.log(`Loading lesson plan with ID: ${id}, isPublic: ${isPublic}`);
+
+      // Use the appropriate API endpoint based on whether it's a public lesson
+      let response;
+      if (isPublic) {
+        console.log('Using getPublicLessonPlanById endpoint');
+        response = await getPublicLessonPlanById(id);
+      } else {
+        console.log('Using getLessonPlanById endpoint');
+        response = await getLessonPlanById(id);
+      }
 
       // Check if the response is an error
       if ('error' in response) {
+        console.error('Error in response:', response.error);
+
+        // If we get a "not found" error and we're not already trying the public endpoint,
+        // try the public endpoint as a fallback
+        if (response.error.includes('not found') && !isPublic) {
+          console.log('Lesson plan not found, trying public endpoint as fallback');
+          return loadLessonPlanById(id, true);
+        }
+
         throw new Error(response.error);
       }
 
@@ -648,8 +713,15 @@ function LessonPlan() {
         id: response.id,
         name: response.name,
         mainTopic: response.mainTopic,
-        topicsCount: response.topics?.length || 0
+        topicsCount: response.topics?.length || 0,
+        isPublic: response.isPublic
       });
+
+      // Set read-only mode if the lesson plan belongs to another user or is public
+      const isOwnLessonPlan = user?.id === response.userId;
+      const shouldBeReadOnly = !isOwnLessonPlan || isPublic;
+      console.log(`Setting read-only mode: ${shouldBeReadOnly} (isOwnLessonPlan: ${isOwnLessonPlan}, isPublic: ${isPublic})`);
+      setIsReadOnly(shouldBeReadOnly);
 
       // Set the main topic from the lesson plan
       setMainTopic(response.mainTopic);
@@ -661,6 +733,10 @@ function LessonPlan() {
       setShowRightSidebar(true);
       setShowGenerationOptions(true);
 
+      // Set a flag to indicate we're using a saved hierarchy
+      // This will prevent automatic API calls to fetch a new hierarchy
+      useLessonPlanStore.setState({ usingSavedHierarchy: true });
+
       // Set the current lesson plan in the store
       // This will also reset the unsaved changes flag
       setCurrentLessonPlan({
@@ -668,12 +744,15 @@ function LessonPlan() {
         name: response.name,
         mainTopic: response.mainTopic,
         topics: response.topics,
+        isPublic: response.isPublic,
         createdAt: response.createdAt || undefined,
         updatedAt: response.updatedAt || undefined
       });
 
       // Reconstruct the hierarchy from the loaded topics
       if (response.topics && response.topics.length > 0) {
+        console.log(`Processing ${response.topics.length} topics from the lesson plan`);
+
         // Set the search query to match the main topic for consistency
         setSearchQuery(response.mainTopic);
 
@@ -681,6 +760,8 @@ function LessonPlan() {
         const savedTopicsList = response.topics
           .filter(topic => topic.mdxContent && topic.mdxContent.trim() !== '')
           .map(topic => topic.topic);
+
+        console.log(`Found ${savedTopicsList.length} topics with content`);
 
         // Update the savedTopics in the store
         useLessonPlanStore.setState({ savedTopics: savedTopicsList });
@@ -693,8 +774,24 @@ function LessonPlan() {
           console.log('Setting reconstructed hierarchy from lesson plan:', reconstructedHierarchy);
           // Directly update the store to ensure the hierarchy is updated
           useLessonPlanStore.setState({ topicsHierarchy: reconstructedHierarchy });
+
+          // Set a flag to indicate we have a valid hierarchy
+          // This will prevent automatic API calls to fetch a new hierarchy
+          useLessonPlanStore.setState({ hasValidHierarchy: true });
         } else {
           console.warn('Failed to reconstruct hierarchy from lesson plan topics');
+          // Only fetch from API if not a public lesson or if we really need to
+          if (!isPublic) {
+            console.log('Fetching hierarchy from API for:', response.mainTopic);
+            // Make sure the search query is set to the main topic
+            setSearchQuery(response.mainTopic);
+            // Add a small delay to ensure the search query is updated
+            setTimeout(() => {
+              refetchTopics();
+            }, 100);
+          } else {
+            console.log('Not fetching hierarchy from API for public lesson to preserve saved hierarchy');
+          }
         }
       }
 
@@ -708,8 +805,9 @@ function LessonPlan() {
           setSelectedTopic(parentTopic.topic);
           setSelectedSubtopic(null);
           // Strip frontmatter if present
-          setMdxContent(stripFrontmatter(parentTopic.mdxContent || ''));
-          setShowEditor(!!parentTopic.mdxContent);
+          const cleanedMdx = stripFrontmatter(parentTopic.mdxContent || '');
+          setMdxContent(cleanedMdx);
+          setShowEditor(!!cleanedMdx);
         } else {
           // If no parent topic, just select the first one
           const firstTopic = response.topics[0];
@@ -724,8 +822,9 @@ function LessonPlan() {
           }
 
           // Strip frontmatter if present
-          setMdxContent(stripFrontmatter(firstTopic.mdxContent || ''));
-          setShowEditor(!!firstTopic.mdxContent);
+          const cleanedMdx = stripFrontmatter(firstTopic.mdxContent || '');
+          setMdxContent(cleanedMdx);
+          setShowEditor(!!cleanedMdx);
         }
 
         // Force a UI update by triggering a window resize event
@@ -734,9 +833,14 @@ function LessonPlan() {
 
           // We should already have a reconstructed hierarchy from the lesson plan topics,
           // but if for some reason we don't, trigger a search to fetch it
+          // Only do this if it's not a public lesson
           if (!topicsHierarchy || !Array.isArray(topicsHierarchy) || topicsHierarchy.length === 0) {
-            console.log('No hierarchy found after loading lesson plan, fetching hierarchy for:', response.mainTopic);
-            refetchTopics();
+            if (!isPublic) {
+              console.log('No hierarchy found after loading lesson plan, fetching hierarchy for:', response.mainTopic);
+              refetchTopics();
+            } else {
+              console.log('No hierarchy found for public lesson, but not fetching to preserve saved state');
+            }
           } else {
             console.log('Using hierarchy from store after loading lesson plan:', topicsHierarchy);
           }
@@ -747,14 +851,28 @@ function LessonPlan() {
       toast.success(`Loaded lesson plan: ${response.name}`);
     } catch (error) {
       console.error('Error loading lesson plan:', error);
-      toast.error('Failed to load lesson plan');
+
+      // Show a more specific error message
+      if (error instanceof Error) {
+        if (error.message.includes('not public')) {
+          toast.error('This lesson plan is not public and cannot be viewed');
+        } else if (error.message.includes('not found')) {
+          toast.error('Lesson plan not found. It may have been deleted or is not accessible.');
+        } else {
+          toast.error(`Failed to load lesson plan: ${error.message}`);
+        }
+      } else {
+        toast.error('Failed to load lesson plan');
+      }
+
+      // Reset the state to clear any partial data
+      resetState();
     } finally {
       setIsLoadingLessonPlan(false);
       setShowLoadConfirmDialog(false);
     }
   }, [
     reconstructHierarchyFromTopics,
-    setTopicsHierarchy,
     setMainTopic,
     setSearchQuery,
     setShowRightSidebar,
@@ -765,62 +883,126 @@ function LessonPlan() {
     setSelectedSubtopic,
     setSelectedTopic,
     setShowEditor,
-    topicsHierarchy
+    topicsHierarchy,
+    user,
+    setIsReadOnly,
+    resetState
+    // setTopicsHierarchy is intentionally omitted as it's a stable reference from Zustand
   ]);
 
   // Function to handle loading a lesson plan when there are unsaved changes
-  const handleLoadLessonPlan = useCallback((id: number) => {
+  const handleLoadLessonPlan = useCallback((id: number, isPublic = false) => {
+    console.log(`handleLoadLessonPlan called with id: ${id}, isPublic: ${isPublic}`);
+
     if (hasUnsavedChanges) {
       // If there are unsaved changes, show confirmation dialog
       setLocalLessonPlanToLoad(id);
+      // Store whether it's a public lesson plan
+      useLessonPlanStore.setState({ isLoadingPublicLesson: isPublic });
       setShowLoadConfirmDialog(true);
     } else {
       // If no unsaved changes, load directly
-      loadLessonPlanById(id);
+      console.log(`No unsaved changes, loading lesson plan directly with isPublic: ${isPublic}`);
+      loadLessonPlanById(id, isPublic);
     }
   }, [hasUnsavedChanges, loadLessonPlanById, setLocalLessonPlanToLoad, setShowLoadConfirmDialog]);
 
   // Handle confirming to discard changes and load the lesson plan
   const handleDiscardAndLoad = () => {
     if (localLessonPlanToLoad) {
-      loadLessonPlanById(localLessonPlanToLoad);
+      // Get the isLoadingPublicLesson flag from the store
+      const isLoadingPublicLesson = useLessonPlanStore.getState().isLoadingPublicLesson;
+      console.log(`handleDiscardAndLoad: Loading lesson plan ${localLessonPlanToLoad}, isPublic: ${isLoadingPublicLesson}`);
+
+      // Reset state to clear unsaved changes
+      resetState();
+
+      // Reset the flags to ensure we don't use stale data
+      useLessonPlanStore.setState({
+        isLoadingPublicLesson: false,
+        usingSavedHierarchy: false,
+        hasValidHierarchy: false
+      });
+
+      // Load the lesson plan
+      loadLessonPlanById(localLessonPlanToLoad, isLoadingPublicLesson);
+
+      // Close the dialog
+      setShowLoadConfirmDialog(false);
     }
   };
 
   // Check for lesson plan to load from the store
   useEffect(() => {
     if (lessonPlanToLoad !== null) {
-      console.log(`Found lesson plan to load from store: ${lessonPlanToLoad}`);
+      // Get the isLoadingPublicLesson flag from the store
+      const isLoadingPublicLesson = useLessonPlanStore.getState().isLoadingPublicLesson;
+
+      console.log(`Found lesson plan to load from store: ${lessonPlanToLoad}, isPublic: ${isLoadingPublicLesson}`);
 
       // Add a small delay to ensure the component is fully mounted
       setTimeout(() => {
-        handleLoadLessonPlan(lessonPlanToLoad);
+        // If we're coming from the public lessons page, use the isPublic flag
+        // or if the state indicates it's a public lesson
+        const shouldLoadAsPublic = isLoadingPublicLesson || (state && state.isPublic === true);
+        console.log('Loading lesson plan with public flag:', shouldLoadAsPublic);
+
+        // Reset any existing state before loading the new lesson plan
+        if (currentLessonPlan && currentLessonPlan.id !== lessonPlanToLoad) {
+          console.log('Resetting state before loading new lesson plan');
+          resetState();
+        }
+
+        handleLoadLessonPlan(lessonPlanToLoad, shouldLoadAsPublic);
         // Clear the lessonPlanToLoad after handling it
         setLessonPlanToLoad(null);
       }, 100);
     }
-  }, [lessonPlanToLoad, handleLoadLessonPlan, setLessonPlanToLoad]);
+  }, [lessonPlanToLoad, handleLoadLessonPlan, setLessonPlanToLoad, state, currentLessonPlan, resetState]);
 
-  // Handle loading lesson plan when coming from the dashboard
+  // Handle loading lesson plan when coming from the dashboard or public lessons page
   useEffect(() => {
-    if (fromDashboard) {
+    if (fromDashboard || state?.isPublic) {
+      // Get the isLoadingPublicLesson flag from the store
+      const isLoadingPublicLesson = useLessonPlanStore.getState().isLoadingPublicLesson;
+
       if (lessonPlanToLoad !== null) {
-        toast.info('Loading lesson plan from dashboard...');
-        console.log('Loading lesson plan from dashboard with ID:', lessonPlanToLoad);
+        toast.info('Loading lesson plan...');
+        console.log('Loading lesson plan with ID:', lessonPlanToLoad, 'isPublic:', isLoadingPublicLesson);
 
         // Add a small delay to ensure the component is fully mounted
         setTimeout(() => {
-          handleLoadLessonPlan(lessonPlanToLoad);
+          // If we're coming from the public lessons page, use the isPublic flag
+          // or if the state indicates it's a public lesson
+          const shouldLoadAsPublic = isLoadingPublicLesson || (state && state.isPublic === true);
+          console.log('Loading lesson plan with public flag:', shouldLoadAsPublic);
+
+          // Reset any existing state before loading the new lesson plan
+          if (currentLessonPlan && currentLessonPlan.id !== lessonPlanToLoad) {
+            console.log('Resetting state before loading new lesson plan');
+            resetState();
+          }
+
+          handleLoadLessonPlan(lessonPlanToLoad, shouldLoadAsPublic);
           // Clear the lessonPlanToLoad after handling it
           setLessonPlanToLoad(null);
         }, 200);
       } else if (state && state.lessonPlanId) {
         // Check if there's a lesson plan ID in the route state
-        console.log('Found lesson plan ID in route state:', state.lessonPlanId);
-        handleLoadLessonPlan(state.lessonPlanId);
+        console.log('Found lesson plan ID in route state:', state.lessonPlanId, 'isPublic:', state.isPublic);
+        // Check if it's a public lesson plan
+        const isPublic = state.isPublic === true;
+
+        // Reset any existing state before loading the new lesson plan
+        if (currentLessonPlan && currentLessonPlan.id !== state.lessonPlanId) {
+          console.log('Resetting state before loading new lesson plan from route state');
+          resetState();
+        }
+
+        handleLoadLessonPlan(state.lessonPlanId, isPublic);
       }
     }
-  }, [fromDashboard, lessonPlanToLoad, handleLoadLessonPlan, setLessonPlanToLoad, state]);
+  }, [fromDashboard, lessonPlanToLoad, handleLoadLessonPlan, setLessonPlanToLoad, state, currentLessonPlan, resetState]);
 
   // Check for mobile view and handle resize
   useEffect(() => {
@@ -840,6 +1022,23 @@ function LessonPlan() {
 
   // Initial load effect - run once when component mounts
   useEffect(() => {
+    // Get the usingSavedHierarchy flag from the store
+    const usingSavedHierarchy = useLessonPlanStore.getState().usingSavedHierarchy;
+    const hasValidHierarchy = useLessonPlanStore.getState().hasValidHierarchy;
+
+    // If we're using a saved hierarchy, don't fetch a new one
+    if (usingSavedHierarchy || hasValidHierarchy) {
+      console.log('Initial load: Using saved hierarchy, not fetching a new one');
+
+      // If we have a persisted hierarchy but no selected topic, select the first one
+      if (!selectedTopic && !selectedSubtopic && topicsHierarchy && Array.isArray(topicsHierarchy) && topicsHierarchy.length > 0) {
+        const firstTopic = topicsHierarchy[0];
+        console.log('Auto-selecting first topic from saved hierarchy:', firstTopic.topic);
+        handleTopicSelect(firstTopic.topic);
+      }
+      return;
+    }
+
     // Check if we have a mainTopic but no hierarchy data or API response
     if (mainTopic && (!topicsHierarchy || !Array.isArray(topicsHierarchy) || topicsHierarchy.length === 0)) {
       console.log('Initial load: Fetching hierarchy for main topic:', mainTopic);
@@ -866,6 +1065,16 @@ function LessonPlan() {
 
   // Auto-refetch topics if we have a mainTopic but no hierarchy data
   useEffect(() => {
+    // Get the usingSavedHierarchy flag from the store
+    const usingSavedHierarchy = useLessonPlanStore.getState().usingSavedHierarchy;
+    const hasValidHierarchy = useLessonPlanStore.getState().hasValidHierarchy;
+
+    // If we're using a saved hierarchy, don't fetch a new one
+    if (usingSavedHierarchy || hasValidHierarchy) {
+      console.log('Auto-refetch: Using saved hierarchy, not fetching a new one');
+      return;
+    }
+
     if (mainTopic && (!topicsHierarchy || !Array.isArray(topicsHierarchy) || topicsHierarchy.length === 0) && !topicsData) {
       console.log('Auto-refetching topics for:', mainTopic);
       setSearchQuery(mainTopic);
@@ -1563,6 +1772,18 @@ function LessonPlan() {
     setShowSaveConfirmDialog(false);
   };
 
+  // Handle closing a lesson plan (especially for read-only mode)
+  const handleCloseLessonPlan = () => {
+    // Reset the state to clear everything
+    resetState();
+
+    // Make sure read-only mode is turned off
+    setIsReadOnly(false);
+
+    // Show a success message
+    toast.success('Closed lesson plan');
+  };
+
   // Determine panel widths based on fullscreen states and view mode
   const getEditorWidth = () => {
     if (isMobileView) return 'w-full';
@@ -1597,36 +1818,55 @@ function LessonPlan() {
               {currentLessonPlan.name}
             </span>
           )}
+          {isReadOnly && (
+            <span className="ml-2 text-sm bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 px-2 py-0.5 rounded-full">
+              Read-Only Mode
+            </span>
+          )}
         </div>
         <div className="flex gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleCreateNewLesson}
-            className="flex items-center"
-          >
-            <FilePlus className="h-4 w-4 mr-1" />
-            Create New Lesson
-          </Button>
-          <Button
-            variant="default"
-            size="sm"
-            onClick={handleSaveLessonPlan}
-            disabled={isSavingLessonPlan}
-            className="flex items-center"
-          >
-            {isSavingLessonPlan ? (
-              <>
-                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                Saving...
-              </>
-            ) : (
-              <>
-                <Save className="h-4 w-4 mr-1" />
-                {currentLessonPlan?.id ? 'Update Lesson in Database' : 'Save Lesson to Database'}
-              </>
-            )}
-          </Button>
+          {isReadOnly ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleCloseLessonPlan}
+              className="flex items-center"
+            >
+              <X className="h-4 w-4 mr-1" />
+              Close Lesson
+            </Button>
+          ) : (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleCreateNewLesson}
+                className="flex items-center"
+              >
+                <FilePlus className="h-4 w-4 mr-1" />
+                Create New Lesson
+              </Button>
+              <Button
+                variant="default"
+                size="sm"
+                onClick={handleSaveLessonPlan}
+                disabled={isSavingLessonPlan}
+                className="flex items-center"
+              >
+                {isSavingLessonPlan ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <Save className="h-4 w-4 mr-1" />
+                    {currentLessonPlan?.id ? 'Update Lesson in Database' : 'Save Lesson to Database'}
+                  </>
+                )}
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
@@ -1875,40 +2115,42 @@ function LessonPlan() {
 
                 {showGenerationOptions ? (
                   <>
-                    <div className="px-4 py-2">
-                      <div className="flex gap-1 bg-muted/50 p-1 rounded-lg">
-                        <Button
-                          onClick={() => setGenerationMethod('crawl')}
-                          variant="ghost"
-                          size="sm"
-                          className={`flex-1 ${generationMethod === 'crawl'
-                            ? 'bg-background shadow-sm'
-                            : 'hover:bg-background/80'}`}
-                        >
-                          Crawl
-                        </Button>
-                        <Button
-                          onClick={() => setGenerationMethod('urls')}
-                          variant="ghost"
-                          size="sm"
-                          className={`flex-1 ${generationMethod === 'urls'
-                            ? 'bg-background shadow-sm'
-                            : 'hover:bg-background/80'}`}
-                        >
-                          URLs
-                        </Button>
-                        <Button
-                          onClick={() => setGenerationMethod('llm')}
-                          variant="ghost"
-                          size="sm"
-                          className={`flex-1 ${generationMethod === 'llm'
-                            ? 'bg-background shadow-sm'
-                            : 'hover:bg-background/80'}`}
-                        >
-                          LLM Only
-                        </Button>
+                    {!isReadOnly && (
+                      <div className="px-4 py-2">
+                        <div className="flex gap-1 bg-muted/50 p-1 rounded-lg">
+                          <Button
+                            onClick={() => setGenerationMethod('crawl')}
+                            variant="ghost"
+                            size="sm"
+                            className={`flex-1 ${generationMethod === 'crawl'
+                              ? 'bg-background shadow-sm'
+                              : 'hover:bg-background/80'}`}
+                          >
+                            Crawl
+                          </Button>
+                          <Button
+                            onClick={() => setGenerationMethod('urls')}
+                            variant="ghost"
+                            size="sm"
+                            className={`flex-1 ${generationMethod === 'urls'
+                              ? 'bg-background shadow-sm'
+                              : 'hover:bg-background/80'}`}
+                          >
+                            URLs
+                          </Button>
+                          <Button
+                            onClick={() => setGenerationMethod('llm')}
+                            variant="ghost"
+                            size="sm"
+                            className={`flex-1 ${generationMethod === 'llm'
+                              ? 'bg-background shadow-sm'
+                              : 'hover:bg-background/80'}`}
+                          >
+                            LLM Only
+                          </Button>
+                        </div>
                       </div>
-                    </div>
+                    )}
 
                     <CardContent className="overflow-auto flex-1 pt-2">
                       <div className="space-y-4">
@@ -1918,21 +2160,28 @@ function LessonPlan() {
                               <p>
                                 This will generate MDX content by crawling the web for information about the selected topic.
                               </p>
-                            </div>
-                            <Button
-                              onClick={generateMdxFromCrawling}
-                              disabled={isGeneratingMdx}
-                              className="w-full"
-                            >
-                              {isGeneratingMdx ? (
-                                <>
-                                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                                  Generating...
-                                </>
-                              ) : (
-                                mdxContent ? 'Regenerate MDX' : 'Generate MDX'
+                              {isReadOnly && (
+                                <p className="mt-2 text-amber-600 dark:text-amber-400">
+                                  You are in read-only mode. Content generation is disabled.
+                                </p>
                               )}
-                            </Button>
+                            </div>
+                            {!isReadOnly && (
+                              <Button
+                                onClick={generateMdxFromCrawling}
+                                disabled={isGeneratingMdx}
+                                className="w-full"
+                              >
+                                {isGeneratingMdx ? (
+                                  <>
+                                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                    Generating...
+                                  </>
+                                ) : (
+                                  mdxContent ? 'Regenerate MDX' : 'Generate MDX'
+                                )}
+                              </Button>
+                            )}
                           </div>
                         )}
 
@@ -1942,57 +2191,66 @@ function LessonPlan() {
                               <p>
                                 Enter 1-4 URLs to generate MDX content from. Each URL should be a valid web address.
                               </p>
-                            </div>
-
-                            <div className="space-y-2">
-                              {urlInputs.map((url, index) => (
-                                <div key={index} className="flex items-center gap-2">
-                                  <Input
-                                    type="url"
-                                    placeholder="https://example.com"
-                                    value={url.value}
-                                    onChange={(e) => handleUrlChange(index, e.target.value)}
-                                    className={`flex-1 text-xs ${!url.value || url.isValid ? '' : 'border-red-500'}`}
-                                  />
-                                  {urlInputs.length > 1 && (
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      onClick={() => removeUrlInput(index)}
-                                      className="h-8 w-8 hover:bg-destructive/10 hover:text-destructive"
-                                    >
-                                      <X className="h-4 w-4" />
-                                    </Button>
-                                  )}
-                                </div>
-                              ))}
-                            </div>
-
-                            {urlInputs.length < 4 && (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={addUrlInput}
-                                className="w-full text-xs"
-                              >
-                                + Add URL
-                              </Button>
-                            )}
-
-                            <Button
-                              onClick={generateMdxFromUrlsList}
-                              disabled={isGeneratingMdx || !validateUrls()}
-                              className="w-full mt-2"
-                            >
-                              {isGeneratingMdx ? (
-                                <>
-                                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                                  Generating...
-                                </>
-                              ) : (
-                                mdxContent ? 'Regenerate MDX from URLs' : 'Generate MDX from URLs'
+                              {isReadOnly && (
+                                <p className="mt-2 text-amber-600 dark:text-amber-400">
+                                  You are in read-only mode. Content generation is disabled.
+                                </p>
                               )}
-                            </Button>
+                            </div>
+
+                            {!isReadOnly && (
+                              <>
+                                <div className="space-y-2">
+                                  {urlInputs.map((url, index) => (
+                                    <div key={index} className="flex items-center gap-2">
+                                      <Input
+                                        type="url"
+                                        placeholder="https://example.com"
+                                        value={url.value}
+                                        onChange={(e) => handleUrlChange(index, e.target.value)}
+                                        className={`flex-1 text-xs ${!url.value || url.isValid ? '' : 'border-red-500'}`}
+                                      />
+                                      {urlInputs.length > 1 && (
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          onClick={() => removeUrlInput(index)}
+                                          className="h-8 w-8 hover:bg-destructive/10 hover:text-destructive"
+                                        >
+                                          <X className="h-4 w-4" />
+                                        </Button>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+
+                                {urlInputs.length < 4 && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={addUrlInput}
+                                    className="w-full text-xs"
+                                  >
+                                    + Add URL
+                                  </Button>
+                                )}
+
+                                <Button
+                                  onClick={generateMdxFromUrlsList}
+                                  disabled={isGeneratingMdx || !validateUrls()}
+                                  className="w-full mt-2"
+                                >
+                                  {isGeneratingMdx ? (
+                                    <>
+                                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                      Generating...
+                                    </>
+                                  ) : (
+                                    mdxContent ? 'Regenerate MDX from URLs' : 'Generate MDX from URLs'
+                                  )}
+                                </Button>
+                              </>
+                            )}
                           </div>
                         )}
 
@@ -2005,21 +2263,28 @@ function LessonPlan() {
                               <p className="mt-2">
                                 Use this option when you want faster generation or when the topic is well-known.
                               </p>
-                            </div>
-                            <Button
-                              onClick={generateMdxFromLlmOnly}
-                              disabled={isGeneratingMdx}
-                              className="w-full"
-                            >
-                              {isGeneratingMdx ? (
-                                <>
-                                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                                  Generating...
-                                </>
-                              ) : (
-                                mdxContent ? 'Regenerate MDX using LLM Only' : 'Generate MDX using LLM Only'
+                              {isReadOnly && (
+                                <p className="mt-2 text-amber-600 dark:text-amber-400">
+                                  You are in read-only mode. Content generation is disabled.
+                                </p>
                               )}
-                            </Button>
+                            </div>
+                            {!isReadOnly && (
+                              <Button
+                                onClick={generateMdxFromLlmOnly}
+                                disabled={isGeneratingMdx}
+                                className="w-full"
+                              >
+                                {isGeneratingMdx ? (
+                                  <>
+                                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                    Generating...
+                                  </>
+                                ) : (
+                                  mdxContent ? 'Regenerate MDX using LLM Only' : 'Generate MDX using LLM Only'
+                                )}
+                              </Button>
+                            )}
                           </div>
                         )}
 
@@ -2031,7 +2296,7 @@ function LessonPlan() {
 
 
 
-                        {showEditor && (
+                        {showEditor && !isReadOnly && (
                           <div className="mt-4 pt-4 border-t border-border space-y-2">
                             <Button
                               onClick={handleSaveMdx}
@@ -2063,70 +2328,90 @@ function LessonPlan() {
                   </>
                 ) : (
                   <>
-                    <div className="px-4 py-2">
-                      <div className="flex gap-1 bg-muted/50 p-1 rounded-lg">
-                        <Button
-                          onClick={() => setRefinementMethod('selection')}
-                          variant="ghost"
-                          size="sm"
-                          className={`flex-1 ${refinementMethod === 'selection'
-                            ? 'bg-background shadow-sm'
-                            : 'hover:bg-background/80'}`}
-                        >
-                          Selection
-                        </Button>
-                        <Button
-                          onClick={() => setRefinementMethod('crawling')}
-                          variant="ghost"
-                          size="sm"
-                          className={`flex-1 ${refinementMethod === 'crawling'
-                            ? 'bg-background shadow-sm'
-                            : 'hover:bg-background/80'}`}
-                        >
-                          Crawling
-                        </Button>
-                        <Button
-                          onClick={() => setRefinementMethod('urls')}
-                          variant="ghost"
-                          size="sm"
-                          className={`flex-1 ${refinementMethod === 'urls'
-                            ? 'bg-background shadow-sm'
-                            : 'hover:bg-background/80'}`}
-                        >
-                          URLs
-                        </Button>
+                    {!isReadOnly ? (
+                      <div className="px-4 py-2">
+                        <div className="flex gap-1 bg-muted/50 p-1 rounded-lg">
+                          <Button
+                            onClick={() => setRefinementMethod('selection')}
+                            variant="ghost"
+                            size="sm"
+                            className={`flex-1 ${refinementMethod === 'selection'
+                              ? 'bg-background shadow-sm'
+                              : 'hover:bg-background/80'}`}
+                          >
+                            Selection
+                          </Button>
+                          <Button
+                            onClick={() => setRefinementMethod('crawling')}
+                            variant="ghost"
+                            size="sm"
+                            className={`flex-1 ${refinementMethod === 'crawling'
+                              ? 'bg-background shadow-sm'
+                              : 'hover:bg-background/80'}`}
+                          >
+                            Crawling
+                          </Button>
+                          <Button
+                            onClick={() => setRefinementMethod('urls')}
+                            variant="ghost"
+                            size="sm"
+                            className={`flex-1 ${refinementMethod === 'urls'
+                              ? 'bg-background shadow-sm'
+                              : 'hover:bg-background/80'}`}
+                          >
+                            URLs
+                          </Button>
+                        </div>
                       </div>
-                    </div>
+                    ) : (
+                      <div className="px-4 py-2">
+                        <div className="bg-muted/30 rounded-lg p-3 text-sm text-muted-foreground">
+                          <p className="text-amber-600 dark:text-amber-400">
+                            You are in read-only mode. Content refinement is disabled.
+                          </p>
+                        </div>
+                      </div>
+                    )}
 
                     <CardContent className="overflow-auto flex-1 pt-2">
                       <div className="space-y-4">
-                        <div className="space-y-2">
-                          <label className="text-sm font-medium">
-                            Refinement Question/Prompt:
-                          </label>
-                          <Textarea
-                            placeholder="Ask a question or provide instructions for refining the selected text..."
-                            value={refinementQuestion}
-                            onChange={(e) => setRefinementQuestion(e.target.value)}
-                            className="min-h-[80px] text-sm"
-                          />
-                        </div>
+                        {!isReadOnly ? (
+                          <>
+                            <div className="space-y-2">
+                              <label className="text-sm font-medium">
+                                Refinement Question/Prompt:
+                              </label>
+                              <Textarea
+                                placeholder="Ask a question or provide instructions for refining the selected text..."
+                                value={refinementQuestion}
+                                onChange={(e) => setRefinementQuestion(e.target.value)}
+                                className="min-h-[80px] text-sm"
+                              />
+                            </div>
 
-                        <div className="bg-muted/30 rounded-lg p-3 text-sm text-muted-foreground">
-                          <p>
-                            {refinementMethod === 'selection'
-                              ? 'Refine the selected text using the LLM\'s knowledge.'
-                              : refinementMethod === 'crawling'
-                                ? 'Refine the selected text by crawling the web for additional information.'
-                                : 'Refine the selected text using specific URLs as references.'}
-                          </p>
-                          <p className="mt-2 text-xs">
-                            Select text in the editor and enter a question or prompt above.
-                            {isTextRefined && ' The refined text will remain highlighted until you accept or revert the changes.'}
-                          </p>
-                        </div>
+                            <div className="bg-muted/30 rounded-lg p-3 text-sm text-muted-foreground">
+                              <p>
+                                {refinementMethod === 'selection'
+                                  ? 'Refine the selected text using the LLM\'s knowledge.'
+                                  : refinementMethod === 'crawling'
+                                    ? 'Refine the selected text by crawling the web for additional information.'
+                                    : 'Refine the selected text using specific URLs as references.'}
+                              </p>
+                              <p className="mt-2 text-xs">
+                                Select text in the editor and enter a question or prompt above.
+                                {isTextRefined && ' The refined text will remain highlighted until you accept or revert the changes.'}
+                              </p>
+                            </div>
+                          </>
+                        ) : (
+                          <div className="bg-muted/30 rounded-lg p-3 text-sm text-muted-foreground">
+                            <p className="text-amber-600 dark:text-amber-400">
+                              You are in read-only mode. Content refinement is disabled.
+                            </p>
+                          </div>
+                        )}
 
-                        {refinementMethod === 'urls' && (
+                        {refinementMethod === 'urls' && !isReadOnly && (
                           <div className="space-y-2 mt-4">
                             <label className="text-sm font-medium">Reference URLs:</label>
                             <div className="space-y-2">
@@ -2166,43 +2451,45 @@ function LessonPlan() {
                           </div>
                         )}
 
-                        <div className="flex gap-2 mt-2">
-                          <Button
-                            onClick={
-                              refinementMethod === 'selection'
-                                ? refineWithSelection
-                                : refinementMethod === 'crawling'
-                                  ? refineWithCrawl
-                                  : refineWithUrlsList
-                            }
-                            disabled={
-                              isRefiningMdx ||
-                              !selectedEditorText ||
-                              !refinementQuestion.trim() ||
-                              (refinementMethod === 'urls' && !validateRefinementUrls())
-                            }
-                            className="flex-1"
-                          >
-                            {isRefiningMdx ? (
-                              <>
-                                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                                Refining...
-                              </>
-                            ) : (
-                              'Refine Content'
-                            )}
-                          </Button>
-
-                          {isTextRefined && (
+                        {!isReadOnly && (
+                          <div className="flex gap-2 mt-2">
                             <Button
-                              onClick={revertRefinedText}
-                              variant="outline"
+                              onClick={
+                                refinementMethod === 'selection'
+                                  ? refineWithSelection
+                                  : refinementMethod === 'crawling'
+                                    ? refineWithCrawl
+                                    : refineWithUrlsList
+                              }
+                              disabled={
+                                isRefiningMdx ||
+                                !selectedEditorText ||
+                                !refinementQuestion.trim() ||
+                                (refinementMethod === 'urls' && !validateRefinementUrls())
+                              }
                               className="flex-1"
                             >
-                              Revert Changes
+                              {isRefiningMdx ? (
+                                <>
+                                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                  Refining...
+                                </>
+                              ) : (
+                                'Refine Content'
+                              )}
                             </Button>
-                          )}
-                        </div>
+
+                            {isTextRefined && (
+                              <Button
+                                onClick={revertRefinedText}
+                                variant="outline"
+                                className="flex-1"
+                              >
+                                Revert Changes
+                              </Button>
+                            )}
+                          </div>
+                        )}
 
                         {refinementError && (
                           <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-lg mt-4">
@@ -2210,7 +2497,7 @@ function LessonPlan() {
                           </div>
                         )}
 
-                        {showEditor && lastUsedGenerationMethod && (
+                        {showEditor && lastUsedGenerationMethod && !isReadOnly && (
                           <div className="mt-4 pt-4 border-t border-border space-y-2">
                             <Button
                               onClick={handleSaveMdx}
@@ -2385,6 +2672,11 @@ function LessonPlan() {
                   <h2 className="text-lg font-semibold">
                     MDX Editor: {selectedTopic || selectedSubtopic}
                   </h2>
+                  {isReadOnly && (
+                    <span className="ml-2 text-xs bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 px-2 py-0.5 rounded-full">
+                      Read-Only
+                    </span>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
                   <Button
@@ -2400,10 +2692,11 @@ function LessonPlan() {
               </div>
               <Textarea
                 ref={editorRef}
-                className={`w-full h-[calc(100%-3.5rem)] border-none rounded-none resize-none font-mono focus:ring-0 focus:outline-none text-base ${isTextRefined ? 'selection:bg-green-200 dark:selection:bg-green-800 selection:text-black dark:selection:text-white' : ''}`}
+                className={`w-full h-[calc(100%-3.5rem)] border-none rounded-none resize-none font-mono focus:ring-0 focus:outline-none text-base ${isTextRefined ? 'selection:bg-green-200 dark:selection:bg-green-800 selection:text-black dark:selection:text-white' : ''} ${isReadOnly ? 'bg-muted/30 cursor-not-allowed' : ''}`}
                 value={mdxContent}
                 onChange={handleContentChange}
-                onSelect={handleEditorSelect}
+                onSelect={isReadOnly ? undefined : handleEditorSelect}
+                readOnly={isReadOnly}
                 style={{
                   fontSize: '1rem',
                   lineHeight: '1.6',

@@ -523,6 +523,7 @@ export type LessonPlanResponse = {
     parentTopic?: string;
     mainTopic?: string;
   }[];
+  isPublic: boolean;
   createdAt: string | null;
   updatedAt: string | null;
 };
@@ -585,10 +586,99 @@ export const searchTopicsQueryOptions = queryOptions({
   enabled: false, // Only run when explicitly called
 });
 
+// Get all public lesson plans
+export async function getPublicLessonPlans() {
+  try {
+    console.log('Fetching all public lesson plans');
+    const res = await api.lessonPlans.public.$get();
+
+    if (!res.ok) {
+      const errorText = await res.text().catch(() => 'No error text available');
+      console.error('Server error response when fetching public lesson plans:', errorText);
+      throw new Error(`Failed to get public lesson plans: ${res.status} ${res.statusText}`);
+    }
+
+    const data = await res.json();
+    console.log('Public lesson plans fetched successfully:', {
+      count: data.lessonPlans?.length || 0,
+      plans: data.lessonPlans?.map(plan => ({
+        id: plan.id,
+        name: plan.name,
+        isPublic: plan.isPublic,
+        userId: plan.userId
+      }))
+    });
+    return data;
+  } catch (error) {
+    console.error('Error in getPublicLessonPlans:', error);
+    throw error;
+  }
+}
+
+// Check if a lesson plan is public
+export async function checkIfLessonPlanIsPublic(id: number): Promise<boolean> {
+  try {
+    console.log(`Checking if lesson plan with ID ${id} is public`);
+
+    // Use the new direct endpoint to check if a lesson plan is public
+    const res = await api.lessonPlans["check-public"][":id"].$get({ param: { id: String(id) } });
+
+    if (!res.ok) {
+      const errorText = await res.text().catch(() => 'No error text available');
+      console.error(`Server error response when checking if lesson plan ${id} is public:`, errorText);
+      return false;
+    }
+
+    const data = await res.json() as { exists: boolean; isPublic: boolean };
+    console.log(`Direct check result for lesson plan ${id}:`, data);
+
+    // Return whether the lesson plan exists and is public
+    return data.exists && data.isPublic;
+  } catch (error) {
+    console.error(`Error checking if lesson plan ${id} is public:`, error);
+    return false;
+  }
+}
+
+// Get a specific public lesson plan by ID
+export async function getPublicLessonPlanById(id: number): Promise<LessonPlanResponse | ErrorResponse> {
+  try {
+    console.log(`Fetching public lesson plan with ID: ${id}`);
+
+    // Directly try to fetch the public lesson plan
+    const res = await api.lessonPlans.public[":id"].$get({ param: { id: String(id) } });
+
+    if (!res.ok) {
+      const errorText = await res.text().catch(() => 'No error text available');
+      console.error('Server error response when fetching public lesson plan:', errorText);
+      return { error: `Failed to get public lesson plan with ID ${id}: ${res.status} ${res.statusText}` };
+    }
+
+    const data = await res.json() as LessonPlanResponse;
+    console.log('Public lesson plan fetched successfully:', {
+      id: data.id,
+      name: data.name,
+      mainTopic: data.mainTopic,
+      topicsCount: data.topics?.length || 0
+    });
+    return data;
+  } catch (error) {
+    console.error(`Error in getPublicLessonPlanById(${id}):`, error);
+    return { error: `Failed to get public lesson plan: ${error instanceof Error ? error.message : String(error)}` };
+  }
+}
+
 // Lesson plan query options
 export const lessonPlansQueryOptions = queryOptions({
   queryKey: ["lesson-plans"],
   queryFn: getLessonPlans,
+  staleTime: 1000 * 60 * 5, // 5 minutes
+});
+
+// Public lesson plan query options
+export const publicLessonPlansQueryOptions = queryOptions({
+  queryKey: ["public-lesson-plans"],
+  queryFn: getPublicLessonPlans,
   staleTime: 1000 * 60 * 5, // 5 minutes
 });
 
