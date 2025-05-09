@@ -21,8 +21,9 @@ import { stripFrontmatter } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Label } from '@/components/ui/label';
 import { MDXRenderer } from '@/components/mdxRenderer';
-import { Loader2, Search, X, Maximize2, Minimize2, ChevronLeft, ChevronRight, Link, Save, FilePlus, XCircle } from 'lucide-react';
+import { Loader2, Search, X, Maximize2, Minimize2, ChevronLeft, ChevronRight, Link, Save, FilePlus, Plus, Trash2, PlusCircle } from 'lucide-react';
 import { Textarea } from '@/components/ui/textarea';
 import { useLessonPlanStore, UrlInput, SavedLessonTopic } from '@/stores/lessonPlanStore';
 import {
@@ -33,6 +34,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+// Using Dialog component instead of AlertDialog since it's not available
 
 export const Route = createFileRoute('/_authenticated/lesson-plan')({
   component: LessonPlan,
@@ -75,6 +77,7 @@ interface TopicsResponse {
 }
 
 // Interface for the response from the API
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 interface SavedTopicsResponse {
   topics: SavedTopic[];
 }
@@ -105,7 +108,9 @@ function isMdxResponse(data: unknown): data is MdxResponse {
 
 function LessonPlan() {
   // Get route state
-  const { state } = Route.useRouteContext();
+  const routeContext = Route.useRouteContext();
+  // @ts-ignore - state property might not be defined in the type but it exists at runtime
+  const state = routeContext.state;
   const fromDashboard = state?.fromDashboard === true;
 
   // Get current user from auth context
@@ -130,7 +135,9 @@ function LessonPlan() {
     currentLessonPlan, setCurrentLessonPlan,
     savedTopics, // Add this to access the saved topics
     saveMdxToCurrentLesson,
-    hasUnsavedChanges, setHasUnsavedChanges,
+    hasUnsavedChanges,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    setHasUnsavedChanges,
     lessonPlanToLoad, setLessonPlanToLoad,
     topicsHierarchy, setTopicsHierarchy, // Add these to access and update the topics hierarchy
     isReadOnly, setIsReadOnly, // Add these to access and update the read-only flag
@@ -145,6 +152,15 @@ function LessonPlan() {
   const [isMobileView, setIsMobileView] = useState(false);
   const [isSavingMdx, setIsSavingMdx] = useState(false);
   const [hasSavedContent, setHasSavedContent] = useState(false);
+
+  // Topic management state
+  const [showAddTopicDialog, setShowAddTopicDialog] = useState(false);
+  const [showAddSubtopicDialog, setShowAddSubtopicDialog] = useState(false);
+  const [showDeleteTopicDialog, setShowDeleteTopicDialog] = useState(false);
+  const [newTopicName, setNewTopicName] = useState('');
+  const [newSubtopicName, setNewSubtopicName] = useState('');
+  const [parentTopicForSubtopic, setParentTopicForSubtopic] = useState<string | null>(null);
+  const [topicToDelete, setTopicToDelete] = useState<{topic: string, isSubtopic: boolean, parentTopic?: string} | null>(null);
 
   // Lesson plan management state
   const [isSavingLessonPlan, setIsSavingLessonPlan] = useState(false);
@@ -642,7 +658,7 @@ function LessonPlan() {
             mdxContent: '',
             isSubtopic: false,
             parentTopic: parentTopicName,
-            mainTopic: topics[0]?.mainTopic || null
+            mainTopic: topics[0]?.mainTopic || ''
           });
         } else if (!parentTopics.includes(existingTopic)) {
           console.log(`Adding existing topic as parent: ${parentTopicName}`);
@@ -1506,6 +1522,167 @@ function LessonPlan() {
     setIsRightSidebarCollapsed(!isRightSidebarCollapsed);
   };
 
+  // Function to open the add topic dialog
+  const openAddTopicDialog = () => {
+    setNewTopicName('');
+    setShowAddTopicDialog(true);
+  };
+
+  // Function to open the add subtopic dialog
+  const openAddSubtopicDialog = (parentTopic: string) => {
+    setNewSubtopicName('');
+    setParentTopicForSubtopic(parentTopic);
+    setShowAddSubtopicDialog(true);
+  };
+
+  // Function to open the delete topic dialog
+  const openDeleteTopicDialog = (topic: string, isSubtopic: boolean, parentTopic?: string) => {
+    setTopicToDelete({ topic, isSubtopic, parentTopic });
+    setShowDeleteTopicDialog(true);
+  };
+
+  // Function to add a new main topic
+  const handleAddTopic = () => {
+    if (!newTopicName.trim()) {
+      toast.error('Topic name cannot be empty');
+      return;
+    }
+
+    // Check if the topic already exists
+    const topicExists = topicsHierarchy.some(t => t.topic === newTopicName);
+    if (topicExists) {
+      toast.error('Topic already exists');
+      return;
+    }
+
+    // Create a new topic and add it to the hierarchy
+    const updatedHierarchy = [...topicsHierarchy];
+    updatedHierarchy.push({
+      topic: newTopicName,
+      subtopics: []
+    });
+
+    // Update the hierarchy in the store
+    setTopicsHierarchy(updatedHierarchy);
+
+    // Add the new topic to savedTopics to ensure it's included in the hierarchy
+    const updatedSavedTopics = [...savedTopics, newTopicName];
+    useLessonPlanStore.setState({ savedTopics: updatedSavedTopics });
+
+    // Close the dialog
+    setShowAddTopicDialog(false);
+
+    toast.success(`Topic "${newTopicName}" added successfully`);
+  };
+
+  // Function to add a new subtopic
+  const handleAddSubtopic = () => {
+    if (!newSubtopicName.trim() || !parentTopicForSubtopic) {
+      toast.error('Subtopic name cannot be empty');
+      return;
+    }
+
+    // Find the parent topic in the hierarchy
+    const updatedHierarchy = [...topicsHierarchy];
+    const parentTopicIndex = updatedHierarchy.findIndex(t => t.topic === parentTopicForSubtopic);
+
+    if (parentTopicIndex === -1) {
+      toast.error('Parent topic not found');
+      return;
+    }
+
+    // Check if the subtopic already exists
+    const subtopicExists = updatedHierarchy[parentTopicIndex].subtopics.includes(newSubtopicName);
+    if (subtopicExists) {
+      toast.error('Subtopic already exists');
+      return;
+    }
+
+    // Add the subtopic to the parent topic
+    updatedHierarchy[parentTopicIndex].subtopics.push(newSubtopicName);
+
+    // Update the hierarchy in the store
+    setTopicsHierarchy(updatedHierarchy);
+
+    // Add the new subtopic to savedTopics to ensure it's included in the hierarchy
+    const updatedSavedTopics = [...savedTopics, newSubtopicName];
+    useLessonPlanStore.setState({ savedTopics: updatedSavedTopics });
+
+    // Close the dialog
+    setShowAddSubtopicDialog(false);
+
+    toast.success(`Subtopic "${newSubtopicName}" added successfully`);
+  };
+
+  // Function to delete a topic or subtopic
+  const handleDeleteTopic = () => {
+    if (!topicToDelete) {
+      toast.error('No topic selected for deletion');
+      return;
+    }
+
+    const { topic, isSubtopic, parentTopic } = topicToDelete;
+    const updatedHierarchy = [...topicsHierarchy];
+
+    if (isSubtopic && parentTopic) {
+      // Delete a subtopic
+      const parentTopicIndex = updatedHierarchy.findIndex(t => t.topic === parentTopic);
+      if (parentTopicIndex === -1) {
+        toast.error('Parent topic not found');
+        return;
+      }
+
+      // Remove the subtopic from the parent topic
+      updatedHierarchy[parentTopicIndex].subtopics = updatedHierarchy[parentTopicIndex].subtopics.filter(
+        st => st !== topic
+      );
+    } else {
+      // Delete a main topic (and all its subtopics)
+      const topicIndex = updatedHierarchy.findIndex(t => t.topic === topic);
+      if (topicIndex === -1) {
+        toast.error('Topic not found');
+        return;
+      }
+
+      // Remove the topic from the hierarchy
+      updatedHierarchy.splice(topicIndex, 1);
+    }
+
+    // Update the hierarchy in the store
+    setTopicsHierarchy(updatedHierarchy);
+
+    // Remove the deleted topic from savedTopics
+    const updatedSavedTopics = savedTopics.filter(t => t !== topic);
+
+    // If it's a main topic, also remove all its subtopics from savedTopics
+    let finalSavedTopics = updatedSavedTopics;
+    if (!isSubtopic) {
+      // Get all subtopics of the deleted topic
+      const deletedSubtopics = topicsHierarchy.find(t => t.topic === topic)?.subtopics || [];
+      // Remove all subtopics from savedTopics
+      finalSavedTopics = updatedSavedTopics.filter(t => !deletedSubtopics.includes(t));
+    }
+
+    // Update savedTopics in the store
+    useLessonPlanStore.setState({ savedTopics: finalSavedTopics });
+
+    // If the deleted topic was selected, clear the selection
+    if (selectedTopic === topic) {
+      setSelectedTopic(null);
+      setShowEditor(false);
+      setMdxContent('');
+    } else if (selectedSubtopic === topic) {
+      setSelectedSubtopic(null);
+      setShowEditor(false);
+      setMdxContent('');
+    }
+
+    // Close the dialog
+    setShowDeleteTopicDialog(false);
+
+    toast.success(`${isSubtopic ? 'Subtopic' : 'Topic'} "${topic}" deleted successfully`);
+  };
+
   // Handle saving the current lesson plan to the database
   // This function ensures that each topic/subtopic has:
   // 1. A parent topic:
@@ -1705,14 +1882,12 @@ function LessonPlan() {
       // Update the lesson plan in the store
       setCurrentLessonPlan(savedLessonPlan);
 
-      // Ensure we're only highlighting topics with actual MDX content
-      // This is needed because setCurrentLessonPlan will reset savedTopics based on the lesson plan
-      const topicsWithContent = savedLessonPlan.topics
-        .filter(topic => topic.mdxContent && topic.mdxContent.trim() !== '')
-        .map(topic => topic.topic);
+      // Include all topics in savedTopics, not just those with content
+      // This ensures the entire hierarchy is preserved
+      const allTopics = savedLessonPlan.topics.map(topic => topic.topic);
 
-      // Update the savedTopics in the store to only include topics with content
-      useLessonPlanStore.setState({ savedTopics: topicsWithContent });
+      // Update the savedTopics in the store to include all topics
+      useLessonPlanStore.setState({ savedTopics: allTopics });
 
       // Show different success message based on whether we created or updated
       if (lessonPlan.id) {
@@ -1953,10 +2128,25 @@ function LessonPlan() {
           {!isLeftSidebarCollapsed ? (
             <div className="flex flex-col h-[calc(100%-40px)]">
               <CardHeader className="py-3 pb-1">
-                <CardTitle className="text-lg font-semibold">Lesson Plan Hierarchy</CardTitle>
-                <CardDescription className="text-muted-foreground">
-                  Search for a topic to generate a lesson plan
-                </CardDescription>
+                <div className="flex justify-between items-center">
+                  <div>
+                    <CardTitle className="text-lg font-semibold">Lesson Plan Hierarchy</CardTitle>
+                    <CardDescription className="text-muted-foreground">
+                      Search for a topic to generate a lesson plan
+                    </CardDescription>
+                  </div>
+                  {!isReadOnly && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={openAddTopicDialog}
+                      className="h-8 w-8 p-0"
+                      title="Add new topic"
+                    >
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
               </CardHeader>
               <CardContent className="overflow-auto flex-1 pt-2">
                 <form onSubmit={handleSearch} className="flex items-center space-x-2 mb-4">
@@ -2010,33 +2200,80 @@ function LessonPlan() {
 
                         return parsedTopics.map((topic: Topic, index: number) => (
                           <div key={index} className="space-y-1 mb-3">
-                            <div
-                              className={`font-medium cursor-pointer p-2 rounded-md transition-colors ${
-                                selectedTopic === topic.topic
-                                  ? 'bg-primary/10 text-primary'
-                                  : savedTopics.includes(topic.topic)
-                                    ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300'
-                                    : 'hover:bg-muted'
-                              }`}
-                              onClick={() => handleTopicSelect(topic.topic)}
-                            >
-                              {topic.topic}
+                            <div className="flex items-center justify-between">
+                              <div
+                                className={`flex-1 font-medium cursor-pointer p-2 rounded-md transition-colors ${
+                                  selectedTopic === topic.topic
+                                    ? 'bg-primary/10 text-primary'
+                                    : savedTopics.includes(topic.topic) && currentLessonPlan?.topics.find(t => t.topic === topic.topic && t.mdxContent && t.mdxContent.trim() !== '')
+                                      ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300'
+                                      : 'hover:bg-muted'
+                                }`}
+                                onClick={() => handleTopicSelect(topic.topic)}
+                              >
+                                {topic.topic}
+                              </div>
+                              {!isReadOnly && (
+                                <div className="flex space-x-1 pr-1">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      openAddSubtopicDialog(topic.topic);
+                                    }}
+                                    className="h-6 w-6 p-0 hover:bg-muted"
+                                    title="Add subtopic"
+                                  >
+                                    <PlusCircle className="h-3.5 w-3.5" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      openDeleteTopicDialog(topic.topic, false);
+                                    }}
+                                    className="h-6 w-6 p-0 hover:bg-destructive/10 hover:text-destructive"
+                                    title="Delete topic"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </Button>
+                                </div>
+                              )}
                             </div>
                             {topic.subtopics && topic.subtopics.length > 0 && (
                               <div className="pl-4 space-y-1 mt-1">
                                 {topic.subtopics.map((subtopic, subIndex) => (
-                                  <div
-                                    key={subIndex}
-                                    className={`text-sm cursor-pointer p-1.5 rounded-md transition-colors ${
-                                      selectedSubtopic === subtopic
-                                        ? 'bg-secondary/50 text-secondary-foreground'
-                                        : savedTopics.includes(subtopic)
-                                          ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300'
-                                          : 'hover:bg-muted'
-                                    }`}
-                                    onClick={() => handleSubtopicSelect(subtopic, topic.topic)}
-                                  >
-                                    {subtopic}
+                                  <div key={subIndex} className="flex items-center justify-between">
+                                    <div
+                                      className={`flex-1 text-sm cursor-pointer p-1.5 rounded-md transition-colors ${
+                                        selectedSubtopic === subtopic
+                                          ? 'bg-secondary/50 text-secondary-foreground'
+                                          : savedTopics.includes(subtopic) && currentLessonPlan?.topics.find(t => t.topic === subtopic && t.mdxContent && t.mdxContent.trim() !== '')
+                                            ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300'
+                                            : 'hover:bg-muted'
+                                      }`}
+                                      onClick={() => handleSubtopicSelect(subtopic, topic.topic)}
+                                    >
+                                      {subtopic}
+                                    </div>
+                                    {!isReadOnly && (
+                                      <div className="flex pr-1">
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            openDeleteTopicDialog(subtopic, true, topic.topic);
+                                          }}
+                                          className="h-5 w-5 p-0 hover:bg-destructive/10 hover:text-destructive"
+                                          title="Delete subtopic"
+                                        >
+                                          <Trash2 className="h-3 w-3" />
+                                        </Button>
+                                      </div>
+                                    )}
                                   </div>
                                 ))}
                               </div>
@@ -2757,6 +2994,97 @@ function LessonPlan() {
         </div>
       )}
       </div>
+
+      {/* Add Topic Dialog */}
+      <Dialog open={showAddTopicDialog} onOpenChange={setShowAddTopicDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add New Topic</DialogTitle>
+            <DialogDescription>
+              Enter a name for the new topic. This will be added as a main topic in the hierarchy.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Input
+              placeholder="Enter topic name"
+              value={newTopicName}
+              onChange={(e) => setNewTopicName(e.target.value)}
+              className="w-full"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAddTopicDialog(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleAddTopic}>
+              Add Topic
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Subtopic Dialog */}
+      <Dialog open={showAddSubtopicDialog} onOpenChange={setShowAddSubtopicDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add New Subtopic</DialogTitle>
+            <DialogDescription>
+              Enter a name for the new subtopic. This will be added under the selected topic.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <div className="mb-4">
+              <Label htmlFor="parentTopic">Parent Topic</Label>
+              <Input
+                id="parentTopic"
+                value={parentTopicForSubtopic || ''}
+                disabled
+                className="w-full mt-1"
+              />
+            </div>
+            <div>
+              <Label htmlFor="subtopicName">Subtopic Name</Label>
+              <Input
+                id="subtopicName"
+                placeholder="Enter subtopic name"
+                value={newSubtopicName}
+                onChange={(e) => setNewSubtopicName(e.target.value)}
+                className="w-full mt-1"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAddSubtopicDialog(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleAddSubtopic}>
+              Add Subtopic
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Topic Confirmation Dialog */}
+      <Dialog open={showDeleteTopicDialog} onOpenChange={setShowDeleteTopicDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete {topicToDelete?.isSubtopic ? 'Subtopic' : 'Topic'}</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete "{topicToDelete?.topic}"?
+              {!topicToDelete?.isSubtopic && " This will also delete all its subtopics."}
+              This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDeleteTopicDialog(false)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleDeleteTopic}>
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

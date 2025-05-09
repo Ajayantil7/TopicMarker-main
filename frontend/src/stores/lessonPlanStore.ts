@@ -146,10 +146,9 @@ export const useLessonPlanStore = create<LessonPlanState>()(
           acc[topic.topic] = topic.mdxContent;
           return acc;
         }, {} as Record<string, string>) : {},
-        // Initialize savedTopics from the lesson plan topics that have MDX content
-        savedTopics: lessonPlan ? lessonPlan.topics
-          .filter(topic => topic.mdxContent && topic.mdxContent.trim() !== '')
-          .map(topic => topic.topic) : []
+        // Initialize savedTopics from all lesson plan topics, not just those with MDX content
+        // This ensures the entire hierarchy is preserved
+        savedTopics: lessonPlan ? lessonPlan.topics.map(topic => topic.topic) : []
       })),
       saveMdxToCurrentLesson: (topic, mdxContent, isSubtopic, parentTopic) => {
         set((state) => {
@@ -211,18 +210,13 @@ export const useLessonPlanStore = create<LessonPlanState>()(
             ];
           }
 
-          // Add the topic to savedTopics if it has content and is not already there
+          // Add the topic to savedTopics if it's not already there, regardless of content
           let updatedSavedTopics = state.savedTopics;
 
-          // Only add to savedTopics if it has actual content
-          if (mdxContent && mdxContent.trim() !== '') {
-            updatedSavedTopics = state.savedTopics.includes(topic)
-              ? state.savedTopics
-              : [...state.savedTopics, topic];
-          } else {
-            // If there's no content, remove from savedTopics if it exists
-            updatedSavedTopics = state.savedTopics.filter(t => t !== topic);
-          }
+          // Always add to savedTopics, even if it doesn't have content
+          updatedSavedTopics = state.savedTopics.includes(topic)
+            ? state.savedTopics
+            : [...state.savedTopics, topic];
 
           return {
             currentLessonPlan: {
