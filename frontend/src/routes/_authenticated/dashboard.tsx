@@ -27,8 +27,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { MDXRenderer } from '@/components/mdxRenderer';
 import {
   FileText,
   BookOpen,
@@ -43,8 +41,6 @@ import {
   Globe,
   Lock,
   FileCode,
-  Maximize2,
-  Minimize2,
 } from 'lucide-react';
 
 export const Route = createFileRoute('/_authenticated/dashboard')({
@@ -73,10 +69,6 @@ function Dashboard() {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [isCombinedMdxDialogOpen, setIsCombinedMdxDialogOpen] = useState(false);
-  const [combinedMdxContent, setCombinedMdxContent] = useState('');
-  const [selectedLessonName, setSelectedLessonName] = useState('');
-  const [isFullscreen, setIsFullscreen] = useState(false);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
@@ -214,73 +206,8 @@ function Dashboard() {
 
   // Handle viewing combined MDX content for a lesson plan
   const handleViewCombinedMdx = (lessonPlan: LessonPlanResponse) => {
-    // Set the selected lesson name
-    setSelectedLessonName(lessonPlan.name);
-
-    // Generate combined MDX content
-    const combinedContent = generateCombinedMdxContent(lessonPlan);
-    setCombinedMdxContent(combinedContent);
-
-    // Open the dialog
-    setIsCombinedMdxDialogOpen(true);
-  };
-
-  // Toggle fullscreen mode for the combined MDX view
-  const toggleFullscreen = () => {
-    setIsFullscreen(!isFullscreen);
-  };
-
-  // Generate combined MDX content from a lesson plan
-  const generateCombinedMdxContent = (lessonPlan: LessonPlanResponse): string => {
-    if (!lessonPlan || !lessonPlan.topics || lessonPlan.topics.length === 0) {
-      return `# ${lessonPlan.name}\n\nNo content available for this lesson plan.`;
-    }
-
-    // Start with the lesson plan name as the main heading
-    let combinedContent = `# ${lessonPlan.name}\n\n`;
-
-    // Sort topics to maintain hierarchy - use topic name for sorting
-    const sortedTopics = [...lessonPlan.topics].sort((a, b) => {
-      return a.topic.localeCompare(b.topic);
-    });
-
-    // Process main topics first (non-subtopics)
-    const mainTopics = sortedTopics.filter(topic => !topic.isSubtopic);
-    const subtopics = sortedTopics.filter(topic => topic.isSubtopic);
-
-    // Add main topics
-    mainTopics.forEach(topic => {
-      // Add topic as heading
-      combinedContent += `## ${topic.topic}\n\n`;
-
-      // Add MDX content if available
-      if (topic.mdxContent && topic.mdxContent.trim()) {
-        combinedContent += `${topic.mdxContent.trim()}\n\n`;
-      } else {
-        combinedContent += `*No content available for this topic.*\n\n`;
-      }
-
-      // Add related subtopics
-      const relatedSubtopics = subtopics.filter(
-        subtopic => subtopic.parentTopic === topic.topic
-      );
-
-      if (relatedSubtopics.length > 0) {
-        relatedSubtopics.forEach(subtopic => {
-          // Add subtopic as subheading
-          combinedContent += `### ${subtopic.topic}\n\n`;
-
-          // Add MDX content if available
-          if (subtopic.mdxContent && subtopic.mdxContent.trim()) {
-            combinedContent += `${subtopic.mdxContent.trim()}\n\n`;
-          } else {
-            combinedContent += `*No content available for this subtopic.*\n\n`;
-          }
-        });
-      }
-    });
-
-    return combinedContent;
+    // Open the combined MDX page in a new tab with the lesson plan ID
+    window.open(`/combined-mdx?id=${lessonPlan.id}`, '_blank');
   };
 
   if (isAuthLoading) {
@@ -458,7 +385,8 @@ function Dashboard() {
                       size="sm"
                       variant="ghost"
                       onClick={() => handleViewCombinedMdx(plan as LessonPlanResponse)}
-                      title="View combined MDX content"
+                      title="View all MDX content combined in one document"
+                      className="hover:bg-primary/10 hover:text-primary"
                     >
                       <FileCode className="h-4 w-4" />
                     </Button>
@@ -537,59 +465,6 @@ function Dashboard() {
               ) : (
                 'Delete'
               )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Combined MDX Content Dialog */}
-      <Dialog
-        open={isCombinedMdxDialogOpen}
-        onOpenChange={setIsCombinedMdxDialogOpen}
-      >
-        <DialogContent className={`${isFullscreen ? "w-screen h-screen max-w-none m-0 rounded-none" : "max-w-4xl w-full"}`}>
-          <DialogHeader className="flex flex-row items-center justify-between">
-            <div>
-              <DialogTitle>Combined MDX Content: {selectedLessonName}</DialogTitle>
-              <DialogDescription>
-                All topics and subtopics combined in one document
-              </DialogDescription>
-            </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={toggleFullscreen}
-              className="h-8 w-8"
-            >
-              {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-            </Button>
-          </DialogHeader>
-
-          <Tabs defaultValue="preview" className="w-full">
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="code">MDX Code</TabsTrigger>
-              <TabsTrigger value="preview">Preview</TabsTrigger>
-            </TabsList>
-            <TabsContent value="code" className="mt-4">
-              <div className="relative">
-                <pre className="p-4 rounded bg-muted/50 overflow-auto max-h-[60vh] font-mono text-sm whitespace-pre-wrap">
-                  {combinedMdxContent}
-                </pre>
-              </div>
-            </TabsContent>
-            <TabsContent value="preview" className="mt-4">
-              <div className={`overflow-auto max-h-[60vh] p-4 rounded border`}>
-                <MDXRenderer content={combinedMdxContent} />
-              </div>
-            </TabsContent>
-          </Tabs>
-
-          <DialogFooter className="flex justify-end gap-2 mt-4">
-            <Button
-              variant="outline"
-              onClick={() => setIsCombinedMdxDialogOpen(false)}
-            >
-              Close
             </Button>
           </DialogFooter>
         </DialogContent>
