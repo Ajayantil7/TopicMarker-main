@@ -11,7 +11,12 @@ import {
   FileText,
   Globe,
   ArrowRight,
-  ChevronRight
+  ChevronRight,
+  BookOpen,
+  PenLine,
+  Sparkles,
+  Save,
+  Lightbulb
 } from 'lucide-react';
 
 export const Route = createFileRoute('/')({
@@ -81,14 +86,22 @@ function Home() {
                 )}
               </div>
 
-              <div className="flex items-center space-x-4 text-sm text-muted-foreground">
-                <div className="flex items-center">
-                  <CheckCircle2 className="h-4 w-4 mr-1 text-primary" />
-                  <span>Free to use</span>
+              <div className="flex flex-wrap gap-3 mt-1">
+                <div className="inline-flex items-center px-3 py-1 rounded-full bg-primary/10 text-sm">
+                  <CheckCircle2 className="h-4 w-4 mr-1.5 text-primary" />
+                  <span>Up-to-date content</span>
                 </div>
-                <div className="flex items-center">
-                  <CheckCircle2 className="h-4 w-4 mr-1 text-primary" />
-                  <span>No credit card required</span>
+                <div className="inline-flex items-center px-3 py-1 rounded-full bg-primary/10 text-sm">
+                  <CheckCircle2 className="h-4 w-4 mr-1.5 text-primary" />
+                  <span>AI-powered generation</span>
+                </div>
+                <div className="inline-flex items-center px-3 py-1 rounded-full bg-primary/10 text-sm">
+                  <CheckCircle2 className="h-4 w-4 mr-1.5 text-primary" />
+                  <span>Community sharing</span>
+                </div>
+                <div className="inline-flex items-center px-3 py-1 rounded-full bg-primary/10 text-sm">
+                  <CheckCircle2 className="h-4 w-4 mr-1.5 text-primary" />
+                  <span>Free to use</span>
                 </div>
               </div>
             </div>
@@ -239,6 +252,155 @@ function Home() {
               <p className="text-muted-foreground">
                 Save your lesson plan and optionally publish it for others to learn from
               </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* How to Use Section */}
+      <section className="py-20 px-4 bg-muted/30">
+        <div className="container mx-auto max-w-6xl">
+          <div className="text-center mb-16">
+            <h2 className="text-3xl font-bold mb-4">How to Use Topic Marker</h2>
+            <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
+              A step-by-step guide to get the most out of our platform
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            {/* Step 1 */}
+            <div className="bg-background rounded-xl p-6 shadow-sm border border-border/50">
+              <div className="flex items-start gap-4">
+                <div className="h-12 w-12 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                  <BookOpen className="h-6 w-6 text-primary" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-semibold mb-2">1. Create a New Lesson Plan</h3>
+                  <p className="text-muted-foreground mb-3">
+                    After signing in, navigate to the "Lesson Plan" page from your dashboard or the navigation menu.
+                  </p>
+                  <p className="text-muted-foreground">
+                    Click on "Create New Lesson" to start a fresh lesson plan or continue working on a saved one.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Step 2 */}
+            <div className="bg-background rounded-xl p-6 shadow-sm border border-border/50">
+              <div className="flex items-start gap-4">
+                <div className="h-12 w-12 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                  <Search className="h-6 w-6 text-primary" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-semibold mb-2">2. Search for a Topic</h3>
+                  <p className="text-muted-foreground mb-3">
+                    Use the search bar in the left sidebar to find a main topic for your lesson plan.
+                  </p>
+                  <p className="text-muted-foreground">
+                    The system will generate a hierarchy of related subtopics that you can customize by adding, removing, or reordering.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Step 3 */}
+            <div className="bg-background rounded-xl p-6 shadow-sm border border-border/50">
+              <div className="flex items-start gap-4">
+                <div className="h-12 w-12 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                  <Sparkles className="h-6 w-6 text-primary" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-semibold mb-2">3. Generate Content with RAG</h3>
+                  <p className="text-muted-foreground mb-3">
+                    Select a topic or subtopic from the hierarchy, then use one of the three content generation methods:
+                  </p>
+                  <ul className="text-muted-foreground list-disc pl-5 space-y-1">
+                    <li>Web Crawling: Automatically searches and retrieves relevant content from the web</li>
+                    <li>URL-based: Generate content from specific URLs you provide</li>
+                    <li>LLM-only: Create content using only the language model's knowledge</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+
+            {/* Step 4 */}
+            <div className="bg-background rounded-xl p-6 shadow-sm border border-border/50">
+              <div className="flex items-start gap-4">
+                <div className="h-12 w-12 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                  <PenLine className="h-6 w-6 text-primary" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-semibold mb-2">4. Edit and Refine Content</h3>
+                  <p className="text-muted-foreground mb-3">
+                    Use the MDX editor to modify the generated content. You can view it in code, preview, or split view modes.
+                  </p>
+                  <p className="text-muted-foreground">
+                    Select text and use the refinement options to improve specific sections with additional web content or LLM assistance.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Step 5 */}
+            <div className="bg-background rounded-xl p-6 shadow-sm border border-border/50">
+              <div className="flex items-start gap-4">
+                <div className="h-12 w-12 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                  <Save className="h-6 w-6 text-primary" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-semibold mb-2">5. Save Your Lesson Plan</h3>
+                  <p className="text-muted-foreground mb-3">
+                    Click "Save MDX" to save the content for the current topic. Topics with saved content will be highlighted in the hierarchy.
+                  </p>
+                  <p className="text-muted-foreground">
+                    When you're ready to save the entire lesson plan, click "Save Lesson" at the top of the page.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Step 6 */}
+            <div className="bg-background rounded-xl p-6 shadow-sm border border-border/50">
+              <div className="flex items-start gap-4">
+                <div className="h-12 w-12 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                  <Share2 className="h-6 w-6 text-primary" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-semibold mb-2">6. Share Your Knowledge</h3>
+                  <p className="text-muted-foreground mb-3">
+                    Toggle the "Public" option when saving to make your lesson plan available to the community.
+                  </p>
+                  <p className="text-muted-foreground">
+                    Public lessons can be viewed by anyone through the "Public Lessons" page, helping others learn from your expertise.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-12 bg-background rounded-xl p-6 shadow-sm border border-border/50">
+            <div className="flex items-start gap-4">
+              <div className="h-12 w-12 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                <Lightbulb className="h-6 w-6 text-primary" />
+              </div>
+              <div>
+                <h3 className="text-xl font-semibold mb-2">Pro Tips</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
+                  <div>
+                    <h4 className="font-medium mb-1">Content Generation</h4>
+                    <p className="text-muted-foreground text-sm">
+                      Our RAG system combines web content with LLM capabilities to ensure up-to-date and accurate information. For the most current content, use the web crawling or URL-based methods.
+                    </p>
+                  </div>
+                  <div>
+                    <h4 className="font-medium mb-1">Collaborative Learning</h4>
+                    <p className="text-muted-foreground text-sm">
+                      Browse public lessons to learn from others and get inspiration for your own content. You can also use the "View Combined" option to see all topics in a single document.
+                    </p>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>

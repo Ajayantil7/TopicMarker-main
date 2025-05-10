@@ -139,18 +139,61 @@ export const useLessonPlanStore = create<LessonPlanState>()(
       setIsLeftSidebarCollapsed: (collapsed) => set((state) => ({ isLeftSidebarCollapsed: collapsed })),
       setIsRightSidebarCollapsed: (collapsed) => set((state) => ({ isRightSidebarCollapsed: collapsed })),
       setUrlInputs: (inputs) => set((state) => ({ urlInputs: inputs })),
-      setCurrentLessonPlan: (lessonPlan) => set((state) => ({
-        currentLessonPlan: lessonPlan,
-        hasUnsavedChanges: false, // Always reset unsaved changes when setting a new lesson plan
-        savedTopicsMap: lessonPlan ? lessonPlan.topics.reduce((acc, topic) => {
-          acc[topic.topic] = topic.mdxContent;
-          return acc;
-        }, {} as Record<string, string>) : {},
-        // Initialize savedTopics from the lesson plan topics that have MDX content
-        savedTopics: lessonPlan ? lessonPlan.topics
-          .filter(topic => topic.mdxContent && topic.mdxContent.trim() !== '')
-          .map(topic => topic.topic) : []
-      })),
+      setCurrentLessonPlan: (lessonPlan) => set((state) => {
+        // If we have a lesson plan, reconstruct the hierarchy from it
+        let updatedTopicsHierarchy = state.topicsHierarchy;
+
+        if (lessonPlan) {
+          // Reconstruct the hierarchy from the lesson plan topics
+          const hierarchyMap = new Map<string, string[]>();
+
+          // First, identify all parent topics and initialize their subtopics arrays
+          lessonPlan.topics.forEach(topic => {
+            if (!topic.isSubtopic) {
+              hierarchyMap.set(topic.topic, []);
+            }
+          });
+
+          // Then, add all subtopics to their parent topics
+          lessonPlan.topics.forEach(topic => {
+            if (topic.isSubtopic && topic.parentTopic) {
+              const subtopics = hierarchyMap.get(topic.parentTopic) || [];
+              if (!subtopics.includes(topic.topic)) {
+                subtopics.push(topic.topic);
+                hierarchyMap.set(topic.parentTopic, subtopics);
+              }
+            }
+          });
+
+          // Convert the map to the TopicHierarchy array format
+          updatedTopicsHierarchy = Array.from(hierarchyMap.entries()).map(([topic, subtopics]) => ({
+            topic,
+            subtopics
+          }));
+
+          console.log('Reconstructed hierarchy from lesson plan:', updatedTopicsHierarchy);
+        }
+
+        return {
+          currentLessonPlan: lessonPlan,
+          hasUnsavedChanges: false, // Always reset unsaved changes when setting a new lesson plan
+          savedTopicsMap: lessonPlan ? lessonPlan.topics.reduce((acc, topic) => {
+            acc[topic.topic] = topic.mdxContent;
+            return acc;
+          }, {} as Record<string, string>) : {},
+          // Initialize savedTopics only from topics with actual MDX content
+          // This ensures only topics with content are highlighted as saved (green)
+          savedTopics: lessonPlan ? lessonPlan.topics
+            .filter(topic => topic.mdxContent && topic.mdxContent.trim() !== '')
+            .map(topic => topic.topic) : [],
+          // Update the topics hierarchy if we have a lesson plan
+          topicsHierarchy: lessonPlan ? updatedTopicsHierarchy : state.topicsHierarchy,
+          // Set this flag to true to indicate we have a valid hierarchy
+          hasValidHierarchy: lessonPlan ? updatedTopicsHierarchy.length > 0 : state.hasValidHierarchy,
+          // Set this flag to true to indicate we're using a saved hierarchy
+          usingSavedHierarchy: !!lessonPlan
+        };
+      }),
       saveMdxToCurrentLesson: (topic, mdxContent, isSubtopic, parentTopic) => {
         set((state) => {
           // Ensure we have a main topic
@@ -211,7 +254,7 @@ export const useLessonPlanStore = create<LessonPlanState>()(
             ];
           }
 
-          // Add the topic to savedTopics if it has content and is not already there
+          // Add the topic to savedTopics only if it has content
           let updatedSavedTopics = state.savedTopics;
 
           // Only add to savedTopics if it has actual content
@@ -220,7 +263,7 @@ export const useLessonPlanStore = create<LessonPlanState>()(
               ? state.savedTopics
               : [...state.savedTopics, topic];
           } else {
-            // If there's no content, remove from savedTopics if it exists
+            // If no content, make sure it's not in savedTopics
             updatedSavedTopics = state.savedTopics.filter(t => t !== topic);
           }
 
@@ -244,7 +287,16 @@ export const useLessonPlanStore = create<LessonPlanState>()(
       setLessonPlanToLoad: (id) => set((state) => ({ lessonPlanToLoad: id })),
 
       // Set the topics hierarchy
-      setTopicsHierarchy: (hierarchy) => set((state) => ({ topicsHierarchy: hierarchy })),
+      setTopicsHierarchy: (hierarchy) => {
+        console.log('Setting topics hierarchy in store:', hierarchy);
+        // Create a deep copy to ensure state change is detected
+        const hierarchyCopy = JSON.parse(JSON.stringify(hierarchy));
+        set((state) => ({
+          topicsHierarchy: hierarchyCopy,
+          // Set this flag to true to indicate we have a valid hierarchy
+          hasValidHierarchy: hierarchyCopy.length > 0
+        }));
+      },
 
       // Toggle the public status of the current lesson plan
       toggleLessonPlanPublicStatus: (isPublic) => set((state) => {
