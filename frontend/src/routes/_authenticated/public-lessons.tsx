@@ -208,7 +208,7 @@ function PublicLessons() {
                       <span>{formatDate(plan.createdAt)}</span>
                       <span className="mx-2">•</span>
                       <User className="h-3 w-3 mr-1" />
-                      <span>Created by {plan.userId === user?.id ? 'You' : userMap[plan.userId] || 'Community Member'}</span>
+                      <span>Published by {plan.userId === user?.id ? 'You' : userMap[plan.userId] || 'Community Member'}</span>
                       <span className="mx-2">•</span>
                       <span className="bg-primary/10 text-primary text-xs px-2 py-0.5 rounded-full">
                         {plan.topics.length} {plan.topics.length === 1 ? 'topic' : 'topics'}

@@ -686,7 +686,8 @@ export const publicLessonPlansQueryOptions = queryOptions({
 export async function getUserById(id: string) {
   try {
     console.log(`Fetching user information for ID: ${id}`);
-    const res = await api.user[":id"].$get({ param: { id } });
+    // The user endpoint is under the root auth route
+    const res = await api["user"][":id"].$get({ param: { id } });
 
     if (!res.ok) {
       const errorText = await res.text().catch(() => 'No error text available');

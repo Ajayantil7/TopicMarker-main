@@ -236,7 +236,7 @@ function CombinedMdxPage() {
                 {isLoading ? 'Loading...' : lessonPlan ? `Combined MDX: ${lessonPlan.name}` : 'Combined MDX Content'}
               </h1>
               {contributorName && lessonPlan && (
-                <p className="text-sm text-muted-foreground">Created by {contributorName}</p>
+                <p className="text-sm text-muted-foreground">Published by {contributorName}</p>
               )}
             </div>
           </div>

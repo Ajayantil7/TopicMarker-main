@@ -28,7 +28,7 @@ async function addSampleUsers() {
       const existingUser = await db
         .select()
         .from(users)
-        .where(eq(users.id, user.id))
+        .where(eq => eq(users.id, user.id))
         .limit(1);
 
       if (existingUser.length === 0) {
