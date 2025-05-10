@@ -378,27 +378,27 @@ function Dashboard() {
                       </div>
                     </div>
                     <div className="flex items-center gap-1">
-                      <Button
+                        <Button
                         size="sm"
                         variant="ghost"
                         onClick={() => handleViewLessonPlan(plan.id)}
-                        className="h-7 sm:h-9 px-2 sm:px-3 text-xs sm:text-sm"
-                      >
+                        className="h-7 sm:h-9 px-2 sm:px-3 text-xs sm:text-sm hover:bg-primary/10 hover:text-primary border border-input"
+                        >
                         View
-                      </Button>
+                        </Button>
                       <Button
                         size="sm"
                         variant="ghost"
                         onClick={() => handleViewCombinedMdx(plan as LessonPlanResponse)}
                         title="View all MDX content combined in one document"
-                        className="hover:bg-primary/10 hover:text-primary h-7 sm:h-9 w-7 sm:w-9 p-0"
+                        className="hover:bg-primary/10 hover:text-primary h-7 sm:h-9 w-7 sm:w-9 p-0 border border-input"
                       >
                         <FileCode className="h-3 w-3 sm:h-4 sm:w-4" />
                       </Button>
                       <Button
                         size="sm"
                         variant="ghost"
-                        className="text-destructive hover:bg-destructive/10 hover:text-destructive h-7 sm:h-9 w-7 sm:w-9 p-0"
+                        className="text-destructive hover:bg-destructive/10 hover:text-destructive h-7 sm:h-9 w-7 sm:w-9 p-0 border border-input"
                         onClick={(e) => {
                           e.preventDefault();
                           handleDeleteClick(plan.id);

@@ -34,23 +34,23 @@ function MDXPublic() {
 
   return (
     <div className="min-h-screen bg-white dark:bg-slate-900">
-      <div className="w-full mx-auto px-4 sm:px-6 py-8">
-        <h1 className="text-2xl md:text-3xl font-bold mb-6 text-center">MDX Public View</h1>
+      <div className="w-full mx-auto px-3 sm:px-4 md:px-6 py-4 sm:py-6 md:py-8">
+        <h1 className="text-xl sm:text-2xl md:text-3xl font-bold mb-3 sm:mb-4 md:mb-6 text-center">MDX Public View</h1>
 
         {mdxContent ? (
-          <div className="w-full p-6">
-            <div className="prose prose-sm sm:prose dark:prose-invert w-full max-w-none prose-headings:text-inherit prose-p:text-inherit prose-a:text-blue-600 prose-strong:font-bold prose-em:italic prose-ul:list-disc prose-ol:list-decimal prose-li:ml-4 prose-pre:bg-gray-100 dark:prose-pre:bg-gray-800 prose-pre:p-4 prose-pre:rounded prose-pre:overflow-auto prose-code:text-red-500 prose-blockquote:border-l-4 prose-blockquote:pl-4 prose-blockquote:italic prose-blockquote:text-gray-700 dark:prose-blockquote:text-gray-300 prose-img:max-w-full">
+          <div className="w-full p-3 sm:p-4 md:p-6">
+            <div className="w-full max-w-none">
               <MDXRenderer content={mdxContent} />
             </div>
           </div>
         ) : (
-          <div className="text-center py-10 bg-gray-50 dark:bg-gray-800 rounded-lg shadow-sm">
-            <h2 className="text-xl md:text-2xl font-medium">No content available</h2>
-            <p className="text-gray-500 dark:text-gray-400 mt-2">Edit content in the MDX editor first</p>
-            <div className="mt-6">
+          <div className="text-center py-6 sm:py-8 md:py-10 px-3 sm:px-4 bg-gray-50 dark:bg-gray-800 rounded-lg shadow-sm">
+            <h2 className="text-lg sm:text-xl md:text-2xl font-medium">No content available</h2>
+            <p className="text-gray-500 dark:text-gray-400 mt-2 text-sm sm:text-base">Edit content in the MDX editor first</p>
+            <div className="mt-4 sm:mt-6">
               <a
                 href="/mdx"
-                className="inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                className="inline-flex items-center justify-center px-3 sm:px-4 py-1.5 sm:py-2 border border-transparent text-xs sm:text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
               >
                 Go to MDX Editor
               </a>
