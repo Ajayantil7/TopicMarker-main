@@ -682,3 +682,34 @@ export const publicLessonPlansQueryOptions = queryOptions({
   staleTime: 1000 * 60 * 5, // 5 minutes
 });
 
+// Get user information by ID (for public display)
+export async function getUserById(id: string) {
+  try {
+    console.log(`Fetching user information for ID: ${id}`);
+    const res = await api.user[":id"].$get({ param: { id } });
+
+    if (!res.ok) {
+      const errorText = await res.text().catch(() => 'No error text available');
+      console.error('Server error response when fetching user:', errorText);
+      return null;
+    }
+
+    const data = await res.json();
+    if ('user' in data) {
+      return data.user;
+    }
+    return null;
+  } catch (error) {
+    console.error(`Error in getUserById(${id}):`, error);
+    return null;
+  }
+}
+
+// User query options by ID
+export const userByIdQueryOptions = (id: string) => queryOptions({
+  queryKey: ["user", id],
+  queryFn: () => getUserById(id),
+  staleTime: 1000 * 60 * 60, // 1 hour
+  enabled: !!id, // Only run if ID is provided
+});
+

@@ -1,8 +1,8 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { useState, useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueries } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { getPublicLessonPlans, checkIfLessonPlanIsPublic, getPublicLessonPlanById } from '@/lib/api';
+import { getPublicLessonPlans, checkIfLessonPlanIsPublic, getPublicLessonPlanById, getUserById, userByIdQueryOptions } from '@/lib/api';
 import { useNavigate } from '@tanstack/react-router';
 import { useLessonPlanStore } from '@/stores/lessonPlanStore';
 import { Button } from '@/components/ui/button';
@@ -58,6 +58,26 @@ function PublicLessons() {
 
   const publicLessonPlans = publicLessonPlansData?.lessonPlans || [];
   const totalPublicLessonPlans = publicLessonPlans.length;
+
+  // Fetch user information for each lesson plan creator
+  const userQueries = useQueries({
+    queries: publicLessonPlans.map(plan => ({
+      ...userByIdQueryOptions(plan.userId),
+      staleTime: Infinity, // Cache user data indefinitely for this session
+    })),
+  });
+
+  // Create a map of user IDs to user names
+  const userMap = publicLessonPlans.reduce((map, plan, index) => {
+    const userData = userQueries[index].data;
+    if (userData) {
+      const fullName = userData.given_name && userData.family_name
+        ? `${userData.given_name} ${userData.family_name}`
+        : userData.given_name || 'Community Member';
+      map[plan.userId] = fullName;
+    }
+    return map;
+  }, {} as Record<string, string>);
 
   // Filter lesson plans based on search query
   const filteredLessonPlans = publicLessonPlans.filter(plan =>
@@ -188,7 +208,7 @@ function PublicLessons() {
                       <span>{formatDate(plan.createdAt)}</span>
                       <span className="mx-2">•</span>
                       <User className="h-3 w-3 mr-1" />
-                      <span>Created by {plan.userId === user?.id ? 'You' : 'Community Member'}</span>
+                      <span>Created by {plan.userId === user?.id ? 'You' : userMap[plan.userId] || 'Community Member'}</span>
                       <span className="mx-2">•</span>
                       <span className="bg-primary/10 text-primary text-xs px-2 py-0.5 rounded-full">
                         {plan.topics.length} {plan.topics.length === 1 ? 'topic' : 'topics'}

@@ -4,7 +4,8 @@ import { MDXRenderer } from '@/components/mdxRenderer';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SavedLessonTopic } from '@/stores/lessonPlanStore';
-import { getLessonPlanById, getPublicLessonPlanById, LessonPlanResponse } from '@/lib/api';
+import { getLessonPlanById, getPublicLessonPlanById, LessonPlanResponse, getUserById } from '@/lib/api';
+import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   FileText,
@@ -23,6 +24,7 @@ function CombinedMdxPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [lessonPlan, setLessonPlan] = useState<LessonPlanResponse | null>(null);
   const [combinedMdxContent, setCombinedMdxContent] = useState('');
+  const [contributorName, setContributorName] = useState<string | null>(null);
   const navigate = useNavigate();
 
   // Get the lesson plan ID from the URL search params
@@ -62,6 +64,22 @@ function CombinedMdxPage() {
         // Generate the combined MDX content
         const combinedContent = generateCombinedMdxContent(response);
         setCombinedMdxContent(combinedContent);
+
+        // Fetch contributor information
+        if (response.userId) {
+          try {
+            const userData = await getUserById(response.userId);
+            if (userData) {
+              const fullName = userData.given_name && userData.family_name
+                ? `${userData.given_name} ${userData.family_name}`
+                : userData.given_name || null;
+              setContributorName(fullName);
+            }
+          } catch (error) {
+            console.error('Error fetching contributor information:', error);
+            // Continue without contributor name
+          }
+        }
       } catch (error) {
         console.error('Error fetching lesson plan:', error);
         toast.error('Failed to load lesson plan');
@@ -81,6 +99,11 @@ function CombinedMdxPage() {
 
     // Start with the lesson plan name as the main heading
     let combinedContent = `# ${lessonPlan.name}\n\n`;
+
+    // Add contributor information if available
+    if (contributorName) {
+      combinedContent += `*Created by ${contributorName}*\n\n`;
+    }
 
     // Sort topics by order if available, otherwise maintain the original order
     const sortedTopics = [...lessonPlan.topics].sort((a, b) => {
@@ -208,9 +231,14 @@ function CombinedMdxPage() {
         <div className="max-w-7xl mx-auto w-full flex items-center justify-between">
           <div className="flex items-center">
             <FileCode className="h-6 w-6 text-primary mr-2" />
-            <h1 className="text-xl font-bold">
-              {isLoading ? 'Loading...' : lessonPlan ? `Combined MDX: ${lessonPlan.name}` : 'Combined MDX Content'}
-            </h1>
+            <div>
+              <h1 className="text-xl font-bold">
+                {isLoading ? 'Loading...' : lessonPlan ? `Combined MDX: ${lessonPlan.name}` : 'Combined MDX Content'}
+              </h1>
+              {contributorName && lessonPlan && (
+                <p className="text-sm text-muted-foreground">Created by {contributorName}</p>
+              )}
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <Button
