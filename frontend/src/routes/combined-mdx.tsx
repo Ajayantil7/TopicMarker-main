@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SavedLessonTopic } from '@/stores/lessonPlanStore';
 import { getLessonPlanById, getPublicLessonPlanById, LessonPlanResponse, getUserById } from '@/lib/api';
-import { useQuery } from '@tanstack/react-query';
+// import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   FileText,
@@ -25,7 +25,7 @@ function CombinedMdxPage() {
   const [lessonPlan, setLessonPlan] = useState<LessonPlanResponse | null>(null);
   const [combinedMdxContent, setCombinedMdxContent] = useState('');
   const [contributorName, setContributorName] = useState<string | null>(null);
-  const navigate = useNavigate();
+  // const navigate = useNavigate();
 
   // Get the lesson plan ID from the URL search params
   const searchParams = new URLSearchParams(window.location.search);
