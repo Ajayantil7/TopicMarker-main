@@ -1,7 +1,7 @@
 # Topic Marker
 
 <div align="center">
-  <img src="frontend/public/vite.svg" alt="Topic Marker Logo" width="120" />
+
   <h3>Create, manage, and share lesson plans with AI-powered content generation</h3>
 </div>
 
